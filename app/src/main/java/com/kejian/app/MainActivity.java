@@ -3,6 +3,7 @@ package com.kejian.app;
 import android.app.*;
 import android.content.*;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.*;
@@ -50,8 +51,8 @@ public class MainActivity extends Activity {
     prefs = getSharedPreferences("preferences", MODE_PRIVATE);
     db = new ScheduleDb(this);
     termId = db.term(prefs.getLong("term", 0)).id;
-    seedProvidedTimetable();
     migratePending();
+    unifyColorsOnce();
     if (state != null) {
       tab = state.getInt("tab", 0);
       termId = db.term(state.getLong("term", termId)).id;
@@ -124,36 +125,6 @@ public class MainActivity extends Activity {
     return v.length == 16 ? v : fallback;
   }
 
-  private void seedProvidedTimetable() {
-    if (prefs.getBoolean("seeded", false)) return;
-    try (InputStream in = getAssets().open("sample-result.json")) {
-      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-      byte[] block = new byte[8192];
-      int n;
-      while ((n = in.read(block)) != -1) bytes.write(block, 0, n);
-      JSONObject j = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
-      JSONObject t = j.getJSONObject("semester");
-      ScheduleDb.Term target = term();
-      target.name = t.getString("name");
-      target.start = t.getString("startDate");
-      target.weeks = t.getInt("totalWeeks");
-      db.saveTerm(target);
-      JSONArray a = j.getJSONArray("courses");
-      List<Course> cs = new ArrayList<>();
-      for (int i = 0; i < a.length(); i++) cs.add(Course.from(a.getJSONObject(i)));
-      db.importCourses(cs, termId);
-      prefs
-          .edit()
-          .putBoolean("seeded", true)
-          .putLong("term", termId)
-          .putString("samplePending", j.optJSONArray("pending").toString())
-          .apply();
-    } catch (Exception e) {
-      prefs.edit().putBoolean("seeded", true).apply();
-      toast("示例未载入，可从智能导入添加课表");
-    }
-  }
-
   public void toast(String s) {
     Toast.makeText(this, s, Toast.LENGTH_LONG).show();
   }
@@ -165,6 +136,49 @@ public class MainActivity extends Activity {
       prefs.edit().remove("samplePending").apply();
     } catch (Exception e) {
       toast("待补充事项尚未迁移，请重启应用重试");
+    }
+  }
+
+  /**
+   * Repairs the mixed colours 1.1.0 left behind. Runs once, guarded by a preference, because it
+   * rewrites data the user is looking at; the settings screen can re-run it on demand.
+   */
+  private void unifyColorsOnce() {
+    if (prefs.getBoolean("colorsUnified", false)) return;
+    prefs.edit().putBoolean("colorsUnified", true).apply();
+    try {
+      prefs.edit().putInt("colorsUnifiedCount", db.unifyColors()).apply();
+    } catch (Exception e) {
+      // Leaving the flag set on failure is deliberate: a partial repair must not be retried on
+      // every launch. The settings row reports the count and can be tapped to run it again.
+      toast("同名课程颜色未能统一，可在设置中重试");
+    }
+  }
+
+  private void runUnify() {
+    try {
+      int changed = db.unifyColors();
+      prefs.edit().putInt("colorsUnifiedCount", changed).apply();
+      toast(changed == 0 ? "同名课程颜色已经一致" : "已统一 " + changed + " 项安排的颜色");
+      showSettings();
+    } catch (Exception e) {
+      Ui.error(this, e);
+    }
+  }
+
+  /**
+   * Drops an in-progress import draft when its target term is gone. Without this the draft would
+   * keep offering to file courses into a term that no longer exists.
+   */
+  private void clearDraftFor(long term) {
+    String raw = prefs.getString("importDraft", null);
+    if (raw == null) return;
+    try {
+      if (new JSONObject(raw).optLong("targetTerm", -1) == term)
+        prefs.edit().remove("importDraft").apply();
+    } catch (JSONException e) {
+      // Unparseable drafts can never be committed, so they only take up space.
+      prefs.edit().remove("importDraft").apply();
     }
   }
 
@@ -193,6 +207,7 @@ public class MainActivity extends Activity {
   private void renderNav() {
     navigation.removeAllViews();
     String[] names = {"课表", "今日", "课程", "设置"}, icons = {"calendar", "today", "book", "settings"};
+    boolean pending = pendingCount() > 0;
     for (int i = 0; i < 4; i++) {
       final int index = i;
       LinearLayout n = Ui.col(this);
@@ -203,9 +218,28 @@ public class MainActivity extends Activity {
       TextView label = Ui.text(this, names[i], 11, i == tab ? Ui.PRIMARY : Ui.MUTED, i == tab);
       label.setGravity(Gravity.CENTER);
       n.addView(label);
-      navigation.addView(n, new LinearLayout.LayoutParams(0, -1, 1));
-      n.setContentDescription(names[i]);
-      n.setOnClickListener(v -> showTab(index));
+      FrameLayout cell = new FrameLayout(this);
+      cell.addView(n, new FrameLayout.LayoutParams(-1, -1));
+      // 待补充事项 live under 设置, so that is the cell that carries the badge.
+      if (i == 3 && pending) {
+        FrameLayout.LayoutParams dot =
+            new FrameLayout.LayoutParams(Ui.dp(this, 9), Ui.dp(this, 9), Gravity.TOP | Gravity.END);
+        dot.setMargins(0, Ui.dp(this, 8), Ui.dp(this, 26), 0);
+        cell.addView(Ui.dot(this, 9, Ui.DANGER), dot);
+      }
+      // The listener stays on the wrapper, not the inner column, so the whole cell is tappable.
+      cell.setContentDescription(names[i] + (i == 3 && pending ? "，有待补充事项" : ""));
+      cell.setOnClickListener(v -> showTab(index));
+      navigation.addView(cell, new LinearLayout.LayoutParams(0, -1, 1));
+    }
+  }
+
+  /** Never throws: the badge is decorative and must not be able to break navigation. */
+  private int pendingCount() {
+    try {
+      return db.pending(termId).length();
+    } catch (JSONException e) {
+      return 0;
     }
   }
 
@@ -260,7 +294,7 @@ public class MainActivity extends Activity {
   }
 
   private void showTimetable() {
-    LinearLayout root = screen("课间", term().name);
+    LinearLayout root = screen("个人课表", term().name);
     LinearLayout actions = Ui.row(this);
     Ui.pad(actions, 16, 0);
     actions.addView(
@@ -291,15 +325,35 @@ public class MainActivity extends Activity {
             }));
     root.addView(actions);
     Ui.gap(root, 12);
+    int waiting = pendingCount();
+    if (waiting > 0) {
+      LinearLayout notice = Ui.card(this);
+      notice.setBackground(Ui.bg(Color.rgb(255, 242, 243), Ui.dp(this, 18)));
+      LinearLayout line = Ui.row(this);
+      line.addView(
+          Ui.dot(this, 10, Ui.DANGER), new LinearLayout.LayoutParams(Ui.dp(this, 10), Ui.dp(this, 10)));
+      line.addView(new View(this), new LinearLayout.LayoutParams(Ui.dp(this, 10), 1));
+      line.addView(
+          Ui.text(this, waiting + " 项课程待补充上课时间", 15, Ui.INK, true),
+          new LinearLayout.LayoutParams(0, -2, 1));
+      line.addView(Ui.text(this, "›", 20, Ui.DANGER, false));
+      notice.addView(line);
+      notice.setOnClickListener(v -> showSamplePending());
+      root.addView(notice);
+      Ui.gap(root, 12);
+    }
     int days = prefs.getBoolean("weekends", true) ? 7 : 5;
     LinearLayout headers = Ui.row(this);
     headers.setBackgroundColor(Color.WHITE);
     View rail = new View(this);
     headers.addView(rail, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 58)));
     LocalDate monday = LocalDate.parse(term().start).plusWeeks(displayWeek - 1);
+    int todayIndex = -1;
     for (int i = 0; i < days; i++) {
       LocalDate date = monday.plusDays(i);
       boolean today = date.equals(LocalDate.now()) && prefs.getBoolean("highlight", true);
+      // Stays -1 when the five-day layout hides a weekend "today", so no block is frosted off-grid.
+      if (today) todayIndex = i;
       LinearLayout col = Ui.col(this);
       col.setGravity(Gravity.CENTER);
       col.addView(Ui.text(this, Course.DAYS[i], 11, today ? Ui.PRIMARY : Ui.MUTED, today));
@@ -318,7 +372,8 @@ public class MainActivity extends Activity {
     scroll.setFillViewport(false);
     List<Course> cs = db.courses(termId);
     TimetableView grid =
-        new TimetableView(this, cs, days, periods(), displayWeek, startTimes(), this::showDetail);
+        new TimetableView(
+            this, cs, days, periods(), displayWeek, startTimes(), todayIndex, this::showDetail);
     scroll.addView(grid, new ScrollView.LayoutParams(-1, -2));
     board.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
     TextView add = Ui.button(this, "+", true, () -> editCourse(null));
@@ -405,7 +460,7 @@ public class MainActivity extends Activity {
       } else status = "待上课";
       LinearLayout card =
           courseCard(c, status + "  ·  " + startTimes()[c.start - 1] + "–" + endTimes()[c.end - 1]);
-      body.addView(card);
+      body.addView(SwipeRow.wrap(this, card, () -> confirmDelete(c)));
       Ui.gap(body, 12);
     }
   }
@@ -414,7 +469,7 @@ public class MainActivity extends Activity {
     LinearLayout card = Ui.card(this);
     LinearLayout row = Ui.row(this);
     View bar = new View(this);
-    bar.setBackground(Ui.bg(Color.parseColor(c.color), Ui.dp(this, 4)));
+    bar.setBackground(Ui.bg(Ui.color(c.color), Ui.dp(this, 4)));
     LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(Ui.dp(this, 5), Ui.dp(this, 62));
     bp.rightMargin = Ui.dp(this, 14);
     row.addView(bar, bp);
@@ -467,8 +522,9 @@ public class MainActivity extends Activity {
           String q = search.getText().toString().trim().toLowerCase(Locale.ROOT);
           for (Course c : all)
             if ((c.title + c.teacher + c.room).toLowerCase(Locale.ROOT).contains(q)) {
-              results.addView(
-                  courseCard(c, c.when() + "  ·  " + ScheduleRules.formatWeeks(c.weeks) + "周"));
+              LinearLayout card =
+                  courseCard(c, c.when() + "  ·  " + ScheduleRules.formatWeeks(c.weeks) + "周");
+              results.addView(SwipeRow.wrap(this, card, () -> confirmDelete(c)));
               Ui.gap(results, 10);
             }
           if (results.getChildCount() == 0)
@@ -488,31 +544,84 @@ public class MainActivity extends Activity {
   }
 
   public void editCourse(Course c) {
+    final boolean fresh = c == null;
     CourseEditor.open(
         this,
         c,
-        value -> {
+        (value, colorPicked) -> {
           for (Course other : db.courses(termId))
             if (value.id != other.id && value.conflicts(other))
               throw new IllegalArgumentException("与“" + other.title + "”的周次和节次重叠，请调整后保存");
+          boolean repaint = applyTitleColor(value, colorPicked, fresh);
           db.save(value);
+          // After the save, so the scan sees the row that was just written. Idempotent for it.
+          if (repaint) db.recolorTitle(value.semesterId, value.title, value.color);
           ensureVisiblePeriods();
           showTab(tab);
           toast("课程已保存");
         });
   }
 
+  /**
+   * Same title, same colour within a term. Mutates {@code value} before it is saved.
+   *
+   * @param colorPicked the user chose a colour in the editor, which paints the whole title group
+   * @param fresh true for the "+" button; a rename instead keeps the colour the row already has
+   * @return true when the rest of the title group still has to be repainted after the save
+   */
+  private boolean applyTitleColor(Course value, boolean colorPicked, boolean fresh) {
+    String known = db.colorFor(value.semesterId, value.title);
+    if (colorPicked) return known != null && !known.equalsIgnoreCase(value.color);
+    if (known != null) value.color = known;
+    else if (fresh) value.color = CourseColors.seed(value.title);
+    return false;
+  }
+
+  private void confirmDelete(Course c) {
+    new AlertDialog.Builder(this)
+        .setTitle("删除课程安排？")
+        .setMessage(c.title + "\n" + c.when() + "\n删除后无法撤销，其他安排不会受影响。")
+        .setNegativeButton("取消", null)
+        .setPositiveButton(
+            "删除",
+            (d, w) -> {
+              db.delete(c.id);
+              showTab(tab);
+              toast("已删除这项课程安排");
+            })
+        .show();
+  }
+
+  private void confirmDeletePending(long id, String title) {
+    new AlertDialog.Builder(this)
+        .setTitle("删除待补充事项？")
+        .setMessage(title + "\n删除后这门课不会再出现在待补充列表里。")
+        .setNegativeButton("取消", null)
+        .setPositiveButton(
+            "删除",
+            (d, w) -> {
+              db.deletePending(id);
+              showSamplePending();
+              toast("已删除");
+            })
+        .show();
+  }
+
   public void showDetail(Course c) {
     LinearLayout root = subScreen("课程详情", c.when());
     LinearLayout body = content(root);
     LinearLayout hero = Ui.card(this);
-    hero.setBackground(Ui.bg(Color.parseColor(c.color), Ui.dp(this, 20)));
-    View icon = Ui.icon(this, "book", Ui.INK);
+    // A colour from the RGB picker can be dark enough to swallow ink, so the hero sets its own
+    // text colours instead of the usual INK/MUTED pair.
+    int heroInk = Ui.inkOn(c.color);
+    hero.setBackground(Ui.bg(Ui.color(c.color), Ui.dp(this, 20)));
+    View icon = Ui.icon(this, "book", heroInk);
     hero.addView(icon, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
     Ui.gap(hero, 22);
-    hero.addView(Ui.text(this, c.title, 25, Ui.INK, true));
+    hero.addView(Ui.text(this, c.title, 25, heroInk, true));
     Ui.gap(hero, 10);
-    hero.addView(Ui.text(this, "上课安排", 13, Ui.MUTED, false));
+    hero.addView(
+        Ui.text(this, "上课安排", 13, heroInk == Ui.INK ? Ui.MUTED : Ui.MUTED_ON_DARK, false));
     body.addView(hero);
     Ui.gap(body, 24);
     detailRow(body, "任课教师", c.teacher.isEmpty() ? "未填写" : c.teacher);
@@ -524,24 +633,17 @@ public class MainActivity extends Activity {
     Ui.gap(body, 28);
     body.addView(Ui.button(this, "编辑课程", true, () -> editCourse(c)));
     Ui.gap(body, 12);
-    TextView delete =
-        Ui.link(
-            this,
-            "删除这项安排",
-            () ->
-                new AlertDialog.Builder(this)
-                    .setTitle("删除课程安排？")
-                    .setMessage(c.title + "\n" + c.when() + "\n删除后无法撤销，其他安排不会受影响。")
-                    .setNegativeButton("取消", null)
-                    .setPositiveButton(
-                        "删除",
-                        (d, w) -> {
-                          db.delete(c.id);
-                          showTab(tab);
-                          toast("已删除这项课程安排");
-                        })
-                    .show());
-    delete.setTextColor(Color.rgb(211, 76, 87));
+    // Outlined rather than a small text link: the old link was too easy to miss, which is what
+    // made the user doubt that courses could be deleted at all.
+    TextView delete = Ui.text(this, "删除这项安排", 15, Ui.DANGER, true);
+    delete.setGravity(Gravity.CENTER);
+    delete.setMinHeight(Ui.dp(this, 50));
+    Ui.pad(delete, 14, 12);
+    GradientDrawable outline = Ui.bg(Color.rgb(255, 245, 246), Ui.dp(this, 14));
+    outline.setStroke(Ui.dp(this, 1), Ui.DANGER);
+    delete.setBackground(outline);
+    delete.setContentDescription("删除这项安排");
+    delete.setOnClickListener(v -> confirmDelete(c));
     body.addView(delete);
   }
 
@@ -566,6 +668,15 @@ public class MainActivity extends Activity {
   }
 
   private void setting(LinearLayout body, String title, String detail, Runnable click) {
+    body.addView(linkCard(title, detail, click));
+    Ui.gap(body, 8);
+  }
+
+  /**
+   * A tappable card with a chevron. Shared by the settings screen and the pending list, which is
+   * why it is not named after either.
+   */
+  private LinearLayout linkCard(String title, String detail, Runnable click) {
     LinearLayout row = Ui.card(this);
     LinearLayout h = Ui.row(this);
     LinearLayout labels = Ui.col(this);
@@ -578,8 +689,7 @@ public class MainActivity extends Activity {
     h.addView(Ui.text(this, "›", 22, Ui.MUTED, false));
     row.addView(h);
     row.setOnClickListener(v -> click.run());
-    body.addView(row);
-    Ui.gap(body, 8);
+    return row;
   }
 
   private void toggle(LinearLayout body, String title, String detail, String key, boolean initial) {
@@ -611,8 +721,8 @@ public class MainActivity extends Activity {
     toggle(body, "显示周末", "关闭仅隐藏周六、周日，课程仍会保留", "weekends", true);
     toggle(body, "突出显示今天", "在课表日期栏标记今天", "highlight", true);
     section(body, "智能导入");
-    setting(body, "导入课表文件", "Excel / CSV / 图片 · 识别后确认", () -> importer.open());
-    setting(body, "识别服务设置", "连接地址与 AI 配置状态", () -> importer.settings());
+    setting(body, "导入课表文件", "Excel / CSV · AI 识别后确认", () -> importer.open());
+    setting(body, "AI 配置", "接口地址、模型与密钥", () -> importer.settings());
     try {
       int count = db.pending(termId).length();
       setting(
@@ -624,10 +734,17 @@ public class MainActivity extends Activity {
       Ui.error(this, e);
     }
     section(body, "数据管理");
+    // Auditable and re-runnable: the one-shot repair in onCreate rewrites colours the user is
+    // looking at, so the count it reported has to stay visible after the fact.
+    setting(
+        body,
+        "统一同名课程颜色",
+        "已处理 " + prefs.getInt("colorsUnifiedCount", 0) + " 项 · 点击重新检查",
+        this::runUnify);
     setting(body, "备份课表", "导出所有学期为本地 JSON 文件", this::backup);
     setting(body, "恢复课表", "作为新学期恢复，保留已有数据", this::restore);
     Ui.gap(body, 20);
-    TextView footer = Ui.text(this, "课间 1.0\nJava 原生安卓 · 课表随身记", 12, Ui.MUTED, false);
+    TextView footer = Ui.text(this, "个人课表 1.2.0\nJava 原生安卓 · 课表随身记", 12, Ui.MUTED, false);
     footer.setGravity(Gravity.CENTER);
     footer.setLineSpacing(Ui.dp(this, 6), 1);
     body.addView(footer);
@@ -644,33 +761,40 @@ public class MainActivity extends Activity {
         JSONObject j = arr.getJSONObject(i);
         String title = j.optString("title", "未命名课程"), notes = j.optString("notes");
         long id = j.getLong("id");
-        setting(
-            body,
-            title,
-            notes,
-            () -> {
-              Course c = new Course();
-              c.title = title;
-              c.notes = notes;
-              c.weeks = ScheduleRules.parseWeeks("1-" + term().weeks, term().weeks);
-              CourseEditor.open(
-                  this,
-                  c,
-                  value -> {
-                    for (Course other : db.courses(termId))
-                      if (value.conflicts(other))
-                        throw new IllegalArgumentException("与“" + other.title + "”时间冲突，请调整");
-                    db.save(value);
-                    ensureVisiblePeriods();
-                    db.deletePending(id);
-                    showSamplePending();
-                    toast("已补充并保存课程");
-                  });
-            });
+        LinearLayout card = linkCard(title, notes, () -> fillPending(id, title, notes));
+        body.addView(SwipeRow.wrap(this, card, () -> confirmDeletePending(id, title)));
+        Ui.gap(body, 8);
       }
     } catch (Exception e) {
       Ui.error(this, e);
     }
+  }
+
+  /** Opens the editor on one pending item and files the finished course into the timetable. */
+  private void fillPending(long id, String title, String notes) {
+    Course c = new Course();
+    c.title = title;
+    c.notes = notes;
+    c.weeks = ScheduleRules.parseWeeks("1-" + term().weeks, term().weeks);
+    // Seeded rather than left at the default lavender: this is the path that most often creates a
+    // second arrangement of a course already on the timetable, and the picker should open showing
+    // the colour that course already wears. applyTitleColor overrides it when the title exists.
+    c.color = CourseColors.seed(title);
+    CourseEditor.open(
+        this,
+        c,
+        (value, colorPicked) -> {
+          boolean repaint = applyTitleColor(value, colorPicked, true);
+          for (Course other : db.courses(termId))
+            if (value.conflicts(other))
+              throw new IllegalArgumentException("与“" + other.title + "”时间冲突，请调整");
+          db.save(value);
+          if (repaint) db.recolorTitle(termId, value.title, value.color);
+          ensureVisiblePeriods();
+          db.deletePending(id);
+          showSamplePending();
+          toast("已补充并保存课程");
+        });
   }
 
   public void showTerms() {
@@ -697,12 +821,14 @@ public class MainActivity extends Activity {
               this,
               t.id == termId ? "查看课表" : "切换到此学期",
               () -> {
-                termId = t.id;
-                prefs.edit().putLong("term", termId).apply();
-                displayWeek = currentWeek();
+                activateTerm(t.id);
                 showTab(0);
               }),
           new LinearLayout.LayoutParams(0, -2, 1));
+      TextView remove = Ui.link(this, "删除", () -> confirmDeleteTerm(t));
+      remove.setTextColor(Ui.DANGER);
+      remove.setContentDescription("删除学期 " + t.name);
+      actions.addView(remove, new LinearLayout.LayoutParams(0, -2, 1));
       card.addView(actions);
       body.addView(card);
       Ui.gap(body, 14);
@@ -723,6 +849,38 @@ public class MainActivity extends Activity {
                                     DayOfWeek.MONDAY))
                             .toString(),
                         20))));
+  }
+
+  private void confirmDeleteTerm(ScheduleDb.Term t) {
+    // The last term cannot go: ScheduleDb.term() falls back to terms().get(0) and would throw on
+    // an empty list, including from onCreate on the next launch.
+    if (db.terms().size() <= 1) {
+      toast("至少要保留一个学期");
+      return;
+    }
+    int count = db.courseCount(t.id);
+    new AlertDialog.Builder(this)
+        .setTitle("删除学期？")
+        .setMessage(
+            t.name
+                + "\n"
+                + (count == 0 ? "这个学期还没有课程。" : "其中 " + count + " 项课程安排会一并删除。")
+                + "\n删除后无法撤销，其他学期不会受影响。")
+        .setNegativeButton("取消", null)
+        .setPositiveButton("删除", (d, w) -> deleteTerm(t))
+        .show();
+  }
+
+  private void deleteTerm(ScheduleDb.Term t) {
+    boolean wasCurrent = t.id == termId;
+    db.deleteTerm(t.id);
+    clearDraftFor(t.id);
+    // termId has to be re-pointed explicitly. Left alone, term() would silently fall back to the
+    // newest remaining term and the app would look like it had switched semesters by itself.
+    if (wasCurrent) activateTerm(db.terms().get(0).id);
+    else displayWeek = Math.min(displayWeek, term().weeks);
+    toast("已删除学期“" + t.name + "”");
+    showTerms();
   }
 
   private void editTerm(ScheduleDb.Term t) {
@@ -873,7 +1031,7 @@ public class MainActivity extends Activity {
     Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
     i.setType("application/json");
     i.addCategory(Intent.CATEGORY_OPENABLE);
-    i.putExtra(Intent.EXTRA_TITLE, "课间备份-" + LocalDate.now() + ".json");
+    i.putExtra(Intent.EXTRA_TITLE, "个人课表备份-" + LocalDate.now() + ".json");
     startActivityForResult(i, BACKUP);
   }
 
@@ -904,7 +1062,7 @@ public class MainActivity extends Activity {
         byte[] bytes = readLimited(data.getData(), 8 * 1024 * 1024);
         JSONObject backup = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
         if (!"kejian-backup".equals(backup.optString("format")))
-          throw new IllegalArgumentException("请选择课间导出的 JSON 备份");
+          throw new IllegalArgumentException("请选择本应用导出的 JSON 备份（兼容旧版课间）");
         new AlertDialog.Builder(this)
             .setTitle("恢复备份？")
             .setMessage("将作为新学期导入，保留所有已有课程。显示偏好和服务地址不变。")

@@ -32,22 +32,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(result['courses'][0]['end'], 2)
         self.assertEqual(result['semester']['startDate'], '')
 
-    def test_real_sample(self):
+    def test_synthetic_sample(self):
         s = self.api()
-        path = Path(os.environ.get('SAMPLE_XLS', str(Path(__file__).parent / 'fixtures' / 'sample.xls')))
-        if not path.exists(): self.skipTest('Set SAMPLE_XLS to original workbook')
+        path = Path(__file__).parent / 'fixtures' / 'synthetic.csv'
         result = s.parse_request({'filename':path.name,'contentBase64':base64.b64encode(path.read_bytes()).decode(),'mode':'rules'})
-        self.assertEqual(len({c['title'] for c in result['courses']}),10)
-        self.assertEqual(result['semester']['startDate'],'2026-09-07')
-        self.assertEqual(result['semester']['totalWeeks'],20)
-        self.assertEqual(result['semester']['name'],'2026-2027年第1学期')
-        self.assertEqual(len(result['pending']),2)
-        monday = [c for c in result['courses'] if c['day']==1 and c['title']=='软件工程']
-        self.assertEqual({tuple(c['weeks']) for c in monday}, {(1,2,3,5),(14,15,16,17)})
-        self.assertEqual({c['room'] for c in monday}, {'教1-105','实2-403'})
-        self.assertTrue(all(c['end']==2 for c in monday))
-        fixture=json.loads(Path(__file__).with_name('fixtures').joinpath('sample-result.json').read_text(encoding='utf-8'))
-        self.assertEqual(result,fixture)
+        self.assertEqual(len(result['courses']),1)
+        self.assertEqual(result['semester']['startDate'],'')
+        self.assertEqual(len(result['pending']),0)
+        course = result['courses'][0]
+        self.assertEqual(course['title'],'测试课程')
+        self.assertEqual(course['weeks'],[1,2,3,5])
+        self.assertEqual((course['start'],course['end'],course['day']),(1,2,1))
 
     def test_invalid_requests(self):
         s=self.api()

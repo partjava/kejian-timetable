@@ -6,13 +6,10 @@ import org.json.*;
 /** One teaching arrangement. A course title may have several rooms/week sets. */
 public class Course {
   public long id, semesterId;
-  public String title = "", teacher = "", room = "", color = "#DCD5FF", notes = "";
+  public String title = "", teacher = "", room = "", color = CourseColors.DEFAULT, notes = "";
   public int day = 1, start = 1, end = 2;
   public List<Integer> weeks = new ArrayList<>();
   public static final String[] DAYS = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
-  public static final String[] COLORS = {
-    "#DCD5FF", "#CBE4FF", "#C5EFE1", "#FFE0C7", "#FFD7E8", "#DDE3FF"
-  };
 
   public JSONObject json() throws JSONException {
     return new JSONObject()
@@ -37,7 +34,7 @@ public class Course {
     c.teacher = j.optString("teacher", "");
     c.room = j.optString("room", "");
     c.notes = j.optString("notes", "");
-    c.color = j.optString("color", COLORS[0]);
+    c.color = j.optString("color", CourseColors.DEFAULT);
     c.day = j.getInt("day");
     c.start = j.getInt("start");
     c.end = j.getInt("end");
@@ -72,7 +69,7 @@ public class Course {
     if (weeks.isEmpty()) throw new IllegalArgumentException("至少选择一个上课周次");
     for (int w : weeks)
       if (w < 1 || w > maxWeeks) throw new IllegalArgumentException("上课周次超出当前学期范围");
-    if (!color.matches("#[0-9a-fA-F]{6}")) color = COLORS[0];
+    if (!CourseColors.valid(color)) color = CourseColors.DEFAULT;
     weeks = new ArrayList<>(new TreeSet<>(weeks));
     if (teacher.length() > 120 || room.length() > 200 || notes.length() > 2000)
       throw new IllegalArgumentException("教师、教室或备注过长");

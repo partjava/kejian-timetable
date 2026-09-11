@@ -6,31 +6,38 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.view.*;
 import android.widget.*;
 import java.io.*;
-import java.net.*;
-import java.nio.charset.StandardCharsets;
+import java.net.HttpURLConnection;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import org.json.*;
 
-/** File picker, explicit mode selection, asynchronous transport and editable review. */
+/**
+ * File picker, a direct call to the configured AI provider, and an editable review before saving.
+ *
+ * Reading the worksheet and calling the model both happen here on the phone; there is no desktop
+ * service in the path any more.
+ */
 public class ImportController {
   public static final int PICK_FILE = 101;
+  private static final int MAX_FILE = 8 * 1024 * 1024;
+
   private final MainActivity a;
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
   private Uri uri;
   private String filename = "";
   private boolean closed, busy;
   private int generation;
-  private HttpURLConnection active;
+  private final AtomicReference<HttpURLConnection> active = new AtomicReference<>();
   private final List<Course> parsed = new ArrayList<>();
   private final List<Boolean> selected = new ArrayList<>();
   private JSONArray pending = new JSONArray();
   private JSONObject result;
   private long targetTerm;
-  private String mode = "rules";
 
   public ImportController(MainActivity a) {
     this.a = a;
@@ -91,59 +98,49 @@ public class ImportController {
 
   public void open() {
     if (busy) {
-      a.toast("正在解析，请稍候");
+      a.toast("正在识别，请稍候");
       return;
     }
     if (result != null) {
       review();
       return;
     }
-    LinearLayout root = a.subScreen("智能导入", "上传课表，自动整理上课安排");
+    LinearLayout root = a.subScreen("智能导入", "选择课表文件，由你配置的 AI 识别");
     LinearLayout b = body(root);
     LinearLayout hero = Ui.card(a);
     hero.setBackground(Ui.bg(Color.rgb(239, 237, 255), Ui.dp(a, 20)));
     View icon = Ui.icon(a, "spark", Ui.PRIMARY);
     hero.addView(icon, new LinearLayout.LayoutParams(Ui.dp(a, 34), Ui.dp(a, 34)));
     Ui.gap(hero, 18);
-    hero.addView(Ui.text(a, "把课表，交给课间", 23, Ui.INK, true));
+    hero.addView(Ui.text(a, "轻松导入个人课表", 23, Ui.INK, true));
     Ui.gap(hero, 10);
-    hero.addView(Ui.text(a, "Excel / CSV / 课表图片\n先识别，再检查，最后一键保存。", 14, Ui.MUTED, false));
+    hero.addView(Ui.text(a, "Excel / CSV 课表\n先识别，再检查，最后一键保存。", 14, Ui.MUTED, false));
     b.addView(hero);
     Ui.gap(b, 24);
     b.addView(Ui.button(a, uri == null ? "选择课表文件" : "重新选择文件", false, this::pick));
     Ui.gap(b, 12);
-    TextView file =
-        Ui.text(
-            a,
-            uri == null ? "支持 .xls .xlsx .csv .png .jpg .jpeg，最大8MB" : filename,
-            13,
-            Ui.MUTED,
-            false);
-    b.addView(file);
-    Ui.gap(b, 24);
-    b.addView(Ui.text(a, "识别方式", 15, Ui.INK, true));
-    RadioGroup group = new RadioGroup(a);
-    RadioButton rules = new RadioButton(a);
-    rules.setId(View.generateViewId());
-    rules.setText("本地表格解析 · 无需 AI 密钥");
-    RadioButton ai = new RadioButton(a);
-    ai.setId(View.generateViewId());
-    ai.setText("AI 智能识别 · 需配置服务端 API");
-    group.addView(rules);
-    group.addView(ai);
-    group.check(mode.equals("ai") ? ai.getId() : rules.getId());
-    group.setOnCheckedChangeListener((g, id) -> mode = id == ai.getId() ? "ai" : "rules");
-    b.addView(group);
-    Ui.gap(b, 12);
     b.addView(
         Ui.text(
             a,
-            "表格解析：文件发送到你配置的导入服务。\nAI 识别：文件内容还会发送给该服务配置的 AI 提供商。图片仅支持 AI 模式。",
-            12,
+            uri == null ? "支持 .xls .csv，最大8MB" : filename,
+            13,
             Ui.MUTED,
             false));
     Ui.gap(b, 20);
     b.addView(Ui.text(a, "当前导入学期：" + a.term().name, 13, Ui.INK, false));
+    Ui.gap(b, 12);
+    boolean ready = AiConfig.hasKey(a);
+    b.addView(
+        Ui.text(
+            a,
+            ready
+                ? "表格文字会通过 "
+                    + AiConfig.normalize(AiConfig.url(a))
+                    + " 发送给你配置的 AI 服务商，识别结果先给你确认，不会直接保存。"
+                : "尚未配置 AI。请先到「AI 配置」填写接口地址、模型和密钥。",
+            12,
+            ready ? Ui.MUTED : Color.rgb(167, 95, 26),
+            false));
     Ui.gap(b, 16);
     b.addView(
         Ui.button(
@@ -155,21 +152,24 @@ public class ImportController {
                 a.toast("请先选择课表文件");
                 return;
               }
+              if (!AiConfig.hasKey(a)) {
+                a.toast("尚未配置 API 密钥，请先到 AI 配置填写");
+                settings();
+                return;
+              }
               new AlertDialog.Builder(a)
-                  .setTitle(mode.equals("ai") ? "发送给 AI 识别？" : "发送到导入服务解析？")
+                  .setTitle("发送给 AI 识别？")
                   .setMessage(
                       filename
-                          + "\n\n"
-                          + (mode.equals("ai")
-                              ? "课表内容将通过你的导入服务发送至所配置的 AI 服务商。"
-                              : "文件将发送到你设置的导入服务，不调用外部 AI。")
-                          + "\n识别后可检查和修改，不会直接保存。")
+                          + "\n\n课表文字将发送至 "
+                          + AiConfig.normalize(AiConfig.url(a))
+                          + "。\n识别后可检查和修改，不会直接保存。")
                   .setNegativeButton("取消", null)
                   .setPositiveButton("开始", (d, w) -> parse())
                   .show();
             }));
     Ui.gap(b, 12);
-    b.addView(Ui.link(a, "配置服务地址 / 检查连接", this::settings));
+    b.addView(Ui.link(a, "AI 配置 / 测试连接", this::settings));
   }
 
   private void pick() {
@@ -192,52 +192,33 @@ public class ImportController {
   }
 
   public void settings() {
-    LinearLayout root = a.subScreen("识别服务设置", "API 密钥只保存在后端，不写入安卓应用");
+    LinearLayout root = a.subScreen("AI 配置", "密钥经系统加密保存在本机，不写入安装包与课表备份");
     LinearLayout b = body(root);
-    EditText endpoint =
-        Ui.input(a, "导入服务地址", a.prefs.getString("server", "http://10.0.2.2:8765"), b);
-    endpoint.setInputType(
-        android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-    TextView status = Ui.text(a, "尚未检查连接", 14, Ui.MUTED, false);
+    EditText endpoint = Ui.input(a, "API 地址", AiConfig.url(a), b);
+    endpoint.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+    EditText model = Ui.input(a, "模型名称", AiConfig.model(a), b);
+    EditText key = Ui.input(a, "API 密钥", "", b);
+    key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    key.setHint(AiConfig.hasKey(a) ? "已保存，留空则不修改" : "粘贴你的 API 密钥");
+    TextView status = Ui.text(a, "不确定模型名称时，可先点「获取模型列表」", 14, Ui.MUTED, false);
     b.addView(status);
     Ui.gap(b, 18);
-    b.addView(
-        Ui.button(
-            a,
-            "保存并检查连接",
-            true,
-            () -> {
-              try {
-                String url = validateUrl(endpoint.getText().toString());
-                a.prefs.edit().putString("server", url).apply();
-                status.setText("正在连接…");
-                executor.execute(
-                    () -> {
-                      try {
-                        JSONObject j = request(url + "/health", null);
-                        boolean configured =
-                            j.optBoolean("aiConfigured", j.optBoolean("configured", false));
-                        deliver(
-                            () ->
-                                status.setText(
-                                    "导入服务已连接\n"
-                                        + (configured ? "AI 已配置，可尝试智能识别" : "AI 尚未配置，可先使用本地表格解析")));
-                      } catch (Exception e) {
-                        deliver(() -> status.setText("连接失败：" + e.getMessage() + "\n请先启动电脑上的导入服务。"));
-                      }
-                    });
-              } catch (Exception e) {
-                Ui.error(a, e);
-              }
-            }));
+    b.addView(Ui.button(a, "获取模型列表", false, () -> listModels(endpoint, key, model, status)));
+    Ui.gap(b, 12);
+    b.addView(Ui.button(a, "测试连接", false, () -> test(endpoint, model, key, status)));
+    Ui.gap(b, 12);
+    b.addView(Ui.button(a, "保存配置", true, () -> save(endpoint, model, key, status)));
     Ui.gap(b, 22);
     b.addView(
         Ui.text(
             a,
-            "安卓模拟器：使用 http://10.0.2.2:8765\n"
-                + "USB 真机：电脑执行 adb reverse tcp:8765 tcp:8765 后，使用 http://127.0.0.1:8765\n"
-                + "远程服务：请使用 HTTPS 地址。\n\n"
-                + "AI_API_URL、AI_API_KEY、AI_MODEL 在电脑后端配置。API 地址需支持聊天补全接口；图片识别还需要模型支持视觉输入。",
+            "地址填聊天补全接口的完整地址，例如：\n"
+                + "DeepSeek：https://api.deepseek.com/chat/completions\n"
+                + "OpenAI：https://api.openai.com/v1/chat/completions\n"
+                + "Azure OpenAI 可带 ?api-version= 查询参数。\n\n"
+                + "模型名例如 deepseek-chat、gpt-4o-mini；填不准就点「获取模型列表」让它列出来。\n"
+                + "密钥只存在本机，经系统 Keystore 加密，不会进入安装包，也不会随课表备份迁走。\n"
+                + "换机或改锁屏密码后需要重新填写。",
             13,
             Ui.MUTED,
             false));
@@ -245,17 +226,98 @@ public class ImportController {
     b.addView(Ui.link(a, "返回导入", this::open));
   }
 
-  private String validateUrl(String input) throws Exception {
-    String s = input.trim().replaceAll("/+$", "");
-    URI u = new URI(s);
-    if (u.getHost() == null
-        || u.getUserInfo() != null
-        || u.getQuery() != null
-        || u.getFragment() != null) throw new IllegalArgumentException("请输入有效的服务地址");
-    boolean local = Arrays.asList("10.0.2.2", "127.0.0.1", "localhost").contains(u.getHost());
-    if (!"https".equals(u.getScheme()) && !(local && "http".equals(u.getScheme())))
-      throw new IllegalArgumentException("远程服务需使用 HTTPS；HTTP 仅限本机和模拟器地址");
-    return s;
+  private void test(EditText endpoint, EditText model, EditText key, TextView status) {
+    String url = AiConfig.normalize(endpoint.getText().toString());
+    List<String> problems = AiConfig.validate(url);
+    if (!problems.isEmpty()) {
+      status.setText("请先修正：" + problems.get(0));
+      return;
+    }
+    String modelName = model.getText().toString().trim();
+    if (modelName.isEmpty()) {
+      status.setText("请填写模型名称");
+      return;
+    }
+    String entered = key.getText().toString().trim();
+    String secret = entered.isEmpty() ? AiConfig.key(a) : entered;
+    if (secret == null || secret.isEmpty()) {
+      status.setText("请填写 API 密钥");
+      return;
+    }
+    status.setText("正在测试连接…");
+    executor.execute(
+        () -> {
+          try {
+            AiClient.test(url, modelName, secret);
+            deliver(() -> status.setText("连接成功：地址、密钥和模型都可以使用"));
+          } catch (Exception e) {
+            deliver(() -> status.setText("连接失败：" + e.getMessage()));
+          }
+        });
+  }
+
+  /**
+   * Asks the provider which models the key may use and offers them as a list. Providers without a
+   * /models route keep working: the field stays editable and the reason lands in the status line.
+   */
+  private void listModels(EditText endpoint, EditText key, EditText model, TextView status) {
+    String url = AiConfig.normalize(endpoint.getText().toString());
+    List<String> problems = AiConfig.validate(url);
+    if (!problems.isEmpty()) {
+      status.setText("请先修正：" + problems.get(0));
+      return;
+    }
+    String entered = key.getText().toString().trim();
+    String secret = entered.isEmpty() ? AiConfig.key(a) : entered;
+    if (secret == null || secret.isEmpty()) {
+      status.setText("请先填写 API 密钥");
+      return;
+    }
+    status.setText("正在获取模型列表…");
+    executor.execute(
+        () -> {
+          try {
+            List<String> ids = AiClient.models(url, secret);
+            deliver(() -> chooseModel(ids, model, status));
+          } catch (Exception e) {
+            deliver(() -> status.setText("获取失败：" + e.getMessage()));
+          }
+        });
+  }
+
+  private void chooseModel(List<String> ids, EditText model, TextView status) {
+    String current = model.getText().toString().trim();
+    String[] labels = new String[ids.size()];
+    for (int i = 0; i < ids.size(); i++)
+      labels[i] = ids.get(i).equals(current) ? ids.get(i) + "　（当前使用）" : ids.get(i);
+    status.setText("共 " + ids.size() + " 个模型，点击即可选用");
+    new AlertDialog.Builder(a)
+        .setTitle("选择模型")
+        .setItems(
+            labels,
+            (d, which) -> {
+              model.setText(ids.get(which));
+              status.setText("已选择 " + ids.get(which) + "，请先测试连接，再保存");
+            })
+        .setNegativeButton("取消", null)
+        .show();
+  }
+
+  private void save(EditText endpoint, EditText model, EditText key, TextView status) {
+    try {
+      String url = AiConfig.normalize(endpoint.getText().toString());
+      List<String> problems = AiConfig.validate(url);
+      if (!problems.isEmpty()) throw new IllegalArgumentException(problems.get(0));
+      String modelName = model.getText().toString().trim();
+      if (modelName.isEmpty()) throw new IllegalArgumentException("请填写模型名称");
+      AiConfig.save(a, url, modelName, key.getText().toString());
+      key.setText("");
+      key.setHint(AiConfig.hasKey(a) ? "已保存，留空则不修改" : "粘贴你的 API 密钥");
+      status.setText("已保存");
+      a.toast("AI 配置已保存");
+    } catch (Exception e) {
+      Ui.error(a, e);
+    }
   }
 
   private void parse() {
@@ -263,16 +325,15 @@ public class ImportController {
     busy = true;
     targetTerm = a.termId;
     final int token = ++generation;
-    final String selectedMode = mode;
     final Uri selectedUri = uri;
     final String name = filename;
-    LinearLayout root = a.subScreen("正在识别", "解析完成后，你可以检查每一项安排");
+    LinearLayout root = a.subScreen("正在识别", "识别完成后，你可以检查每一项安排");
     LinearLayout b = body(root);
     Ui.gap(b, 60);
     ProgressBar progress = new ProgressBar(a);
     b.addView(progress, new LinearLayout.LayoutParams(-1, Ui.dp(a, 60)));
     Ui.gap(b, 24);
-    TextView info = Ui.text(a, "正在读取并解析课表…\n" + name, 16, Ui.INK, true);
+    TextView info = Ui.text(a, "正在读取课表并请求 AI 识别…\n" + name, 16, Ui.INK, true);
     info.setGravity(Gravity.CENTER);
     b.addView(info);
     Ui.gap(b, 20);
@@ -283,25 +344,27 @@ public class ImportController {
             () -> {
               generation++;
               busy = false;
-              HttpURLConnection conn = active;
+              HttpURLConnection conn = active.getAndSet(null);
               if (conn != null) conn.disconnect();
               open();
             }));
     executor.execute(
         () -> {
           try {
-            byte[] bytes = a.readLimited(selectedUri, 8 * 1024 * 1024);
-            JSONObject payload =
-                new JSONObject()
-                    .put("filename", name)
-                    .put(
-                        "contentBase64",
-                        android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
-                    .put("mode", selectedMode);
-            String url = validateUrl(a.prefs.getString("server", "http://10.0.2.2:8765"));
-            JSONObject response = request(url + "/parse", payload);
+            String secret = AiConfig.key(a);
+            if (secret == null)
+              throw new IllegalStateException("尚未配置 API 密钥，请先到「AI 配置」填写");
+            byte[] bytes = a.readLimited(selectedUri, MAX_FILE);
+            String content = Sheets.toPromptJson(Sheets.read(name, bytes));
+            JSONObject raw =
+                AiClient.parse(
+                    AiConfig.normalize(AiConfig.url(a)),
+                    AiConfig.model(a),
+                    secret,
+                    content,
+                    active);
+            JSONObject response = ImportValidator.validate(raw);
             JSONArray records = response.getJSONArray("courses");
-            if (records.length() > 1000) throw new IOException("识别课程数量超过限制");
             List<Course> cs = new ArrayList<>();
             for (int i = 0; i < records.length(); i++)
               cs.add(Course.from(records.getJSONObject(i)));
@@ -335,7 +398,6 @@ public class ImportController {
     saveDraft();
     LinearLayout root = a.subScreen("识别结果", "预览、修改，确认后才会保存");
     LinearLayout b = body(root);
-    String actual = result.optString("mode", "unknown");
     LinearLayout summary = Ui.card(a);
     summary.setBackground(Ui.bg(Color.rgb(239, 237, 255), Ui.dp(a, 18)));
     summary.addView(
@@ -344,11 +406,9 @@ public class ImportController {
     summary.addView(
         Ui.text(
             a,
-            "识别方式："
-                + (actual.equals("ai")
-                    ? "AI 智能识别"
-                    : actual.equals("rules") ? "本地表格解析（未调用AI）" : actual)
-                + "\n目标学期："
+            "识别方式：AI 智能识别（"
+                + AiConfig.model(a)
+                + "）\n目标学期："
                 + a.term().name,
             12,
             Ui.MUTED,
@@ -433,7 +493,7 @@ public class ImportController {
                   CourseEditor.open(
                       a,
                       c,
-                      updated -> {
+                      (updated, colorPicked) -> {
                         parsed.set(index, updated);
                         review();
                       })));
@@ -461,10 +521,14 @@ public class ImportController {
                   c.title = p.optString("title");
                   c.notes = p.optString("notes");
                   c.weeks = ScheduleRules.parseWeeks("1-" + a.term().weeks, a.term().weeks);
+                  // Shown seeded, so the preview matches what commit() will store. importCourses
+                  // recomputes colours from the title at commit time, so a colour chosen here is a
+                  // preview rather than a promise — the timetable's colours stay deterministic.
+                  c.color = CourseColors.seed(c.title);
                   CourseEditor.open(
                       a,
                       c,
-                      v -> {
+                      (v, colorPicked) -> {
                         parsed.add(v);
                         selected.add(true);
                         pending.remove(index);
@@ -600,53 +664,6 @@ public class ImportController {
     }
   }
 
-  private JSONObject request(String url, JSONObject body) throws Exception {
-    HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-    active = connection;
-    connection.setConnectTimeout(10000);
-    connection.setReadTimeout(body == null ? 10000 : 120000);
-    connection.setInstanceFollowRedirects(false);
-    try {
-      if (body != null) {
-        connection.setRequestMethod("POST");
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-        connection.setFixedLengthStreamingMode(bytes.length);
-        try (OutputStream out = connection.getOutputStream()) {
-          out.write(bytes);
-        }
-      }
-      int status = connection.getResponseCode();
-      InputStream raw =
-          status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
-      String text = "";
-      if (raw != null)
-        try (InputStream in = raw;
-            ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-          byte[] block = new byte[8192];
-          int n;
-          while ((n = in.read(block)) != -1) {
-            if (out.size() + n > 4 * 1024 * 1024) throw new IOException("服务响应过大");
-            out.write(block, 0, n);
-          }
-          text = out.toString("UTF-8");
-        }
-      JSONObject j;
-      try {
-        j = new JSONObject(text);
-      } catch (JSONException e) {
-        throw new IOException("服务返回了非 JSON 内容（HTTP " + status + "）");
-      }
-      if (status < 200 || status >= 300)
-        throw new IOException(j.optString("error", "服务请求失败：HTTP " + status));
-      return j;
-    } finally {
-      connection.disconnect();
-      if (active == connection) active = null;
-    }
-  }
-
   private void deliver(Runnable r) {
     a.runOnUiThread(
         () -> {
@@ -657,7 +674,8 @@ public class ImportController {
   public void close() {
     closed = true;
     generation++;
-    if (active != null) active.disconnect();
+    HttpURLConnection conn = active.getAndSet(null);
+    if (conn != null) conn.disconnect();
     executor.shutdownNow();
   }
 }

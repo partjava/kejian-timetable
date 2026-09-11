@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Each standalone Instrumentation subclass needs its own <instrumentation> entry before
+  `adb shell am instrument -w com.kejian.app.test/<class>` can find it. SmokeTest is the runner
+  declared by testInstrumentationRunner in build.gradle and must be repeated here, or the manifest
+  merger folds the entries below into it.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    No android:label: the merger reuses one element's label for the other. targetPackage must be
+    the literal app id. AGP injects targetPackage only into its own runner (the one named by
+    testInstrumentationRunner), and in an androidTest manifest ${applicationId} expands to the
+    *test* package, which would leave getTargetContext() pointing at the wrong app.
+  -->
+  <instrumentation
+      android:name="com.kejian.app.SmokeTest"
+      android:targetPackage="com.kejian.app" />
+  <instrumentation
+      android:name="com.kejian.app.CleanStartTest"
+      android:targetPackage="com.kejian.app" />
+</manifest>

@@ -1,4 +1,9 @@
-# 课间导入服务
+# 课间导入服务（已不由 App 调用）
+
+> **1.1.0 起 App 不再依赖此服务。** 手机端已内置 XLS/CSV 读取和直连 AI 的能力，导入全程不需要电脑。
+> 此目录保留作为独立的命令行解析工具与参考实现：它的 `validate_result` 是 App 内 `ImportValidator` 的移植来源，
+> 它的提示词是 `AiClient.PROMPT` 的来源，附带的 `xlrd` 还用于对照验证 App 的 XLS 读取器。
+> 下面的说明描述的是这个服务本身，仍是准确的，但不再代表 App 的工作方式。
 
 需要 Python 3.10 或更新版本。已附带 xlrd 2.0.2，可直接双击 `start-server.cmd`；启动器会优先使用本机已有的虚拟环境或已安装的 Codex 配套 Python，也支持 `KEJIAN_PYTHON` 指定解释器路径。使用独立 Python 时，命令行切换到此目录后执行：
 
@@ -26,4 +31,4 @@ GET `/health` 返回 `{ "status": "ok", "configured": true/false }`。POST `/par
 
 成功结果包含 `courses`、`pending`、`semester`、`warnings`、`mode`。courses 字段为 title、teacher、room、day（1—7）、start/end（1—16）、weeks（1—40 的整数数组）、color（#RRGGBB）、notes。pending 只有 title 和 notes。semester 包含 name、startDate、totalWeeks。**无法识别日期时 startDate 为空字符串，应用必须要求用户确认；不虚构日期。** 未知总周数默认 20 并在规则模式提示检查学期。
 
-测试：`python -m unittest discover -v`。原始课表测试默认读取附带的 `fixtures/sample.xls`，也可以通过 `SAMPLE_XLS` 环境变量指定另一份原始样本。
+测试：`python -m unittest discover -v`。测试只使用虚构内容，附带的 `fixtures/synthetic.csv` 可用于手动导入，不包含真实个人课表。

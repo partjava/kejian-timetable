@@ -13,7 +13,11 @@ public final class Ui {
       MUTED = Color.rgb(127, 133, 153),
       PRIMARY = Color.rgb(101, 88, 232),
       BG = Color.rgb(250, 250, 253),
-      LINE = Color.rgb(235, 236, 244);
+      LINE = Color.rgb(235, 236, 244),
+      /** Destructive actions. Was a literal at the course-detail delete link. */
+      DANGER = Color.rgb(211, 76, 87),
+      /** {@link #MUTED}'s counterpart on a course colour too dark to carry it. */
+      MUTED_ON_DARK = 0xCCFFFFFF;
 
   public static int dp(Context c, float v) {
     return Math.round(v * c.getResources().getDisplayMetrics().density);
@@ -30,6 +34,43 @@ public final class Ui {
     GradientDrawable d = bg(color, dp(c, radius));
     d.setStroke(dp(c, 1), LINE);
     return d;
+  }
+
+  /** Filled swatch, ringed when selected. Radius and stroke are in px. */
+  public static GradientDrawable swatch(int color, int radius, boolean selected) {
+    GradientDrawable d = bg(color, radius);
+    if (selected) d.setStroke(Math.max(2, radius / 6), INK);
+    return d;
+  }
+
+  /**
+   * Readable text colour on an arbitrary background. A colour picked with the RGB sliders can be
+   * dark enough to swallow the default ink, so every surface that draws on a course colour goes
+   * through here. The threshold leans towards ink: dark-on-mid reads better than white at the
+   * small sizes the timetable uses.
+   */
+  public static int inkOn(String hex) {
+    return inkOn(color(hex));
+  }
+
+  /** Parses a stored course colour, falling back to the default rather than throwing. */
+  public static int color(String hex) {
+    try {
+      return Color.parseColor(hex);
+    } catch (Exception e) {
+      return Color.parseColor(CourseColors.DEFAULT);
+    }
+  }
+
+  public static int inkOn(int color) {
+    return Color.luminance(color) > 0.35f ? INK : Color.WHITE;
+  }
+
+  /** A small filled circle, for unread badges. */
+  public static View dot(Context c, float sizeDp, int color) {
+    View v = new View(c);
+    v.setBackground(bg(color, dp(c, sizeDp / 2f)));
+    return v;
   }
 
   public static TextView text(Context c, String value, int size, int color, boolean bold) {

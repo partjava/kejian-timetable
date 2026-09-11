@@ -12,8 +12,12 @@ public class TimetableView extends View {
     void open(Course course);
   }
 
+  /** Room text on a pale block; the dark-block counterpart is {@link Ui#MUTED_ON_DARK}. */
+  private static final int ROOM_INK = Color.rgb(80, 87, 106);
+  private static final int FROST_ALPHA = 0x59;
+
   private final java.util.List<Course> courses;
-  private final int days, periods, week;
+  private final int days, periods, week, todayIndex;
   private final String[] times;
   private final Listener listener;
   private final Paint paint = new Paint(3);
@@ -21,20 +25,36 @@ public class TimetableView extends View {
   private final java.util.List<RectF> hits = new ArrayList<>();
   private final java.util.List<Course> hitCourses = new ArrayList<>();
 
+  /**
+   * {@code today} is a 0-based column index, or -1 for none. The view never reads preferences
+   * itself; the caller decides, which is also how a weekend column hidden by the five-day layout
+   * stays unfrosted.
+   */
   public TimetableView(
-      Context c, java.util.List<Course> cs, int d, int p, int w, String[] t, Listener l) {
+      Context c, java.util.List<Course> cs, int d, int p, int w, String[] t, int today, Listener l) {
     super(c);
     courses = cs;
     days = d;
     periods = p;
     week = w;
     times = t;
+    todayIndex = today;
     listener = l;
     setContentDescription("每周课表，点击彩色课程查看详情");
   }
 
   private float dp(float x) {
     return Ui.dp(getContext(), x);
+  }
+
+  /** Blends a colour towards white by {@link #FROST_ALPHA}, as if a white veil sat on top. */
+  private static int frost(int color) {
+    int keep = 255 - FROST_ALPHA;
+    return Color.argb(
+        255,
+        (Color.red(color) * keep + 255 * FROST_ALPHA) / 255,
+        (Color.green(color) * keep + 255 * FROST_ALPHA) / 255,
+        (Color.blue(color) * keep + 255 * FROST_ALPHA) / 255);
   }
 
   @Override
@@ -75,13 +95,19 @@ public class TimetableView extends View {
               rail + v.day * cw - dp(2),
               Math.min(v.end, periods) * row - dp(3));
       if (r.bottom <= r.top) continue;
-      paint.setColor(Color.parseColor(v.color));
+      // Today's blocks get a white veil so they read lighter than the same course on other days.
+      // Compositing it here rather than drawing an overlay lets the text colour below be chosen
+      // against what is actually on screen.
+      int fill = Ui.color(v.color);
+      int shown = v.day - 1 == todayIndex ? frost(fill) : fill;
+      int ink = Ui.inkOn(shown);
+      paint.setColor(shown);
       c.drawRoundRect(r, dp(9), dp(9), paint);
       hits.add(r);
       hitCourses.add(v);
       int width = Math.max(1, (int) (r.width() - dp(8)));
       text.setTextAlign(Paint.Align.LEFT);
-      text.setColor(Ui.INK);
+      text.setColor(ink);
       text.setTextSize(dp(days == 7 ? 10 : 12));
       text.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
       StaticLayout title =
@@ -97,7 +123,7 @@ public class TimetableView extends View {
       title.draw(c);
       float y = title.getHeight() + dp(8);
       text.setTextSize(dp(days == 7 ? 8 : 10));
-      text.setColor(Color.rgb(80, 87, 106));
+      text.setColor(ink == Ui.INK ? ROOM_INK : Ui.MUTED_ON_DARK);
       text.setTypeface(Typeface.DEFAULT);
       StaticLayout room =
           StaticLayout.Builder.obtain(v.room, 0, v.room.length(), text, width)

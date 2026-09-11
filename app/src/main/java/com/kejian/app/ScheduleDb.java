@@ -146,6 +146,31 @@ public class ScheduleDb extends SQLiteOpenHelper {
     return t.id;
   }
 
+  /**
+   * Deletes a term and everything filed under it. Children go first: the schema has no foreign key
+   * and no cascade, so deleting only the term row would leave rows nothing can ever reach.
+   */
+  public void deleteTerm(long id) {
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      d.delete("courses", "term_id=?", new String[] {"" + id});
+      d.delete("pending", "term_id=?", new String[] {"" + id});
+      d.delete("terms", "id=?", new String[] {"" + id});
+      d.setTransactionSuccessful();
+    } finally {
+      d.endTransaction();
+    }
+  }
+
+  public int courseCount(long term) {
+    try (Cursor c =
+        getReadableDatabase()
+            .rawQuery("SELECT COUNT(*) FROM courses WHERE term_id=?", new String[] {"" + term})) {
+      return c.moveToFirst() ? c.getInt(0) : 0;
+    }
+  }
+
   public List<Course> courses(long term) {
     List<Course> out = new ArrayList<>();
     try (Cursor c =
@@ -166,6 +191,68 @@ public class ScheduleDb extends SQLiteOpenHelper {
     }
     out.sort(Comparator.comparingInt((Course c) -> c.day).thenComparingInt(c -> c.start));
     return out;
+  }
+
+  /**
+   * The colour this title uses in this term, or null when the title is new here.
+   *
+   * "The" colour is the first arrangement's, in {@link #courses} order. Every method below shares
+   * that one rule; a second rule would make titles flip colour on each save.
+   */
+  public String colorFor(long term, String title) {
+    for (Course c : courses(term)) if (title.equals(c.title)) return c.color;
+    return null;
+  }
+
+  /** Repaints every arrangement of one title. Returns how many rows were written. */
+  public int recolorTitle(long term, String title, String color) {
+    // Rejects rather than coerces: Course.validate would quietly turn a malformed value into
+    // COLORS[0], and writing that through would repaint a whole title group lavender.
+    if (!CourseColors.valid(color)) throw new IllegalArgumentException("课程颜色值无效");
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      int changed = 0;
+      for (Course c : courses(term))
+        if (title.equals(c.title) && !color.equals(c.color)) {
+          c.color = color;
+          save(c);
+          changed++;
+        }
+      d.setTransactionSuccessful();
+      return changed;
+    } finally {
+      d.endTransaction();
+    }
+  }
+
+  /** Converges every title in one term onto the colour its first arrangement already uses. */
+  public int unifyColors(long term) {
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      int changed = 0;
+      Map<String, String> seen = new LinkedHashMap<>();
+      for (Course c : courses(term)) {
+        String known = seen.get(c.title);
+        if (known == null) seen.put(c.title, c.color);
+        else if (!known.equals(c.color)) {
+          c.color = known;
+          save(c);
+          changed++;
+        }
+      }
+      d.setTransactionSuccessful();
+      return changed;
+    } finally {
+      d.endTransaction();
+    }
+  }
+
+  public int unifyColors() {
+    int changed = 0;
+    for (Term t : terms()) changed += unifyColors(t.id);
+    return changed;
   }
 
   public long save(Course c) {
@@ -192,10 +279,20 @@ public class ScheduleDb extends SQLiteOpenHelper {
     d.beginTransaction();
     try {
       List<Course> existing = courses(term);
+      // Same title, same colour: seeded from what this term already has, so a re-import can never
+      // repaint the schedule the user is looking at.
+      Map<String, String> byTitle = new LinkedHashMap<>();
+      for (Course e : existing)
+        if (!byTitle.containsKey(e.title)) byTitle.put(e.title, e.color);
       for (Course c : courses) {
         c.id = 0;
         c.semesterId = term;
+        // Validate before inheriting: it can rewrite a malformed colour, and that value must not
+        // become the seed for the rest of the title group.
         c.validate(term(term).weeks, 16);
+        if (!byTitle.containsKey(c.title)) byTitle.put(c.title, CourseColors.seed(c.title));
+        c.color = byTitle.get(c.title);
+        // Course.same ignores colour, so recolouring above can neither create nor hide a duplicate.
         boolean duplicate = false;
         for (Course e : existing)
           if (c.same(e)) {
@@ -234,7 +331,7 @@ public class ScheduleDb extends SQLiteOpenHelper {
   /** Restore as new terms; never destroys existing user records. */
   public int restore(JSONObject j) throws JSONException {
     if (!"kejian-backup".equals(j.optString("format")) || j.optInt("version") != 1)
-      throw new IllegalArgumentException("不是支持的课间备份文件");
+      throw new IllegalArgumentException("不是支持的个人课表备份文件（兼容旧版课间）");
     JSONArray ts = j.getJSONArray("terms");
     if (ts.length() == 0 || ts.length() > 100) throw new IllegalArgumentException("备份学期数量无效");
     SQLiteDatabase d = getWritableDatabase();

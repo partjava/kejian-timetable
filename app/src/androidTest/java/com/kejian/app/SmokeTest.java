@@ -33,7 +33,8 @@ public class SmokeTest extends Instrumentation {
     Bundle out = new Bundle();
     try {
       modelChecks();
-      networkChecks();
+      colorChecks();
+      localImportChecks();
       Intent intent = new Intent(getTargetContext(), MainActivity.class);
       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
       activity = (MainActivity) startActivitySync(intent);
@@ -88,9 +89,16 @@ public class SmokeTest extends Instrumentation {
       shot("08-times.png");
       ui(() -> activity.showTab(3));
       shot("09-settings.png");
-      ui(() -> new ImportController(activity).open());
+      ImportController importer = new ImportController(activity);
+      ui(importer::open);
       require(hasText("智能导入"), "import screen");
+      require(hasText("开始识别"), "import screen offers recognition");
       shot("10-import.png");
+      ui(importer::settings);
+      require(hasText("AI 配置"), "AI settings screen");
+      require(hasText("API 地址") && hasText("模型名称") && hasText("API 密钥"), "AI settings fields");
+      require(hasText("测试连接") && hasText("保存配置"), "AI settings actions");
+      shot("10b-ai-config.png");
       ui(
           () -> {
             activity.prefs.edit().putBoolean("weekends", originalWeekends).commit();
@@ -179,34 +187,167 @@ public class SmokeTest extends Instrumentation {
     }
   }
 
+  /**
+   * One title, one colour, plus term deletion. Runs on its own database so the user's timetable is
+   * never touched.
+   */
+  private void colorChecks() throws Exception {
+    Context c = getTargetContext();
+    String name = "kejian-color-test.db";
+    c.deleteDatabase(name);
+    ScheduleDb db = new ScheduleDb(c, name);
+    try {
+      long term = db.terms().get(0).id;
+
+      // Import seeds a fresh title from its name, and every arrangement of that title agrees.
+      List<Course> batch = new ArrayList<>();
+      for (int i = 0; i < 3; i++) batch.add(sample("高等数学", 1 + i, term, "1-3"));
+      batch.add(sample("大学英语", 5, term, "1-3"));
+      require(db.importCourses(batch, term) == 3, "colour fixture imported");
+      String maths = db.colorFor(term, "高等数学");
+      require(CourseColors.valid(maths), "seeded colour is well formed");
+      require(maths.equals(CourseColors.seed("高等数学")), "fresh title takes the seed colour");
+      for (Course x : db.courses(term))
+        if (x.title.equals("高等数学"))
+          require(x.color.equals(maths), "title colour is uniform after import");
+
+      // A re-import must not repaint the timetable the user is looking at.
+      require(db.importCourses(batch, term) == 0, "re-import is a no-op");
+      require(db.colorFor(term, "高等数学").equals(maths), "re-import keeps the existing colour");
+
+      // An explicit pick writes through to every arrangement of the title.
+      require(db.recolorTitle(term, "高等数学", "#123456") == 3, "recolour writes the whole title");
+      for (Course x : db.courses(term))
+        if (x.title.equals("高等数学"))
+          require("#123456".equals(x.color), "every arrangement repainted");
+      require("#123456".equals(db.colorFor(term, "高等数学")), "colorFor reads the new colour");
+      require(db.recolorTitle(term, "高等数学", "#123456") == 0, "recolour is idempotent");
+      try {
+        db.recolorTitle(term, "高等数学", "nope");
+        throw new AssertionError("malformed colour accepted");
+      } catch (IllegalArgumentException expected) {
+        checks++;
+      }
+      require("#123456".equals(db.colorFor(term, "高等数学")), "a rejected colour changes nothing");
+
+      // Disagreement is repaired by unify, which keeps the first arrangement's colour. The stray
+      // has to be a later row: recolouring the canonical first one just moves the canonical colour.
+      List<Course> listed = db.courses(term);
+      Course stray = listed.get(listed.size() - 2); // the third 高等数学 row; 大学英语 sorts after it
+      require(stray.title.equals("高等数学"), "fixture sorts by day then start");
+      stray.color = "#ABCDEF";
+      db.save(stray);
+      require("#123456".equals(db.colorFor(term, "高等数学")), "colorFor still reads the first row");
+      require(db.unifyColors(term) == 1, "unify rewrites the stray row");
+      require("#123456".equals(db.colorFor(term, "高等数学")), "unify keeps the first colour");
+      require(db.unifyColors(term) == 0, "unify is idempotent");
+
+      // Deleting a term takes its children with it and leaves every other term alone.
+      db.savePending(
+          term, new JSONArray().put(new JSONObject().put("title", "待补充").put("notes", "")));
+      long keep = db.saveTerm(new ScheduleDb.Term(0, "保留学期", "2026-02-02", 20));
+      db.save(sample("线性代数", 4, keep, "1-3"));
+      db.savePending(
+          keep, new JSONArray().put(new JSONObject().put("title", "留下的").put("notes", "")));
+      db.deleteTerm(term);
+      require(db.terms().size() == 1, "term deleted");
+      require(db.terms().get(0).id == keep, "the surviving term is the other one");
+      require(db.courseCount(term) == 0 && db.courseCount(keep) == 1, "other term untouched");
+      // The schema has no foreign key, so only a raw count proves the child rows went too.
+      require(rows(db, "courses", term) == 0, "no orphan course rows");
+      require(rows(db, "pending", term) == 0, "no orphan pending rows");
+    } finally {
+      db.close();
+      c.deleteDatabase(name);
+    }
+  }
+
+  private long rows(ScheduleDb db, String table, long term) {
+    try (android.database.Cursor cur =
+        db.getReadableDatabase()
+            .rawQuery("SELECT COUNT(*) FROM " + table + " WHERE term_id=?", new String[] {"" + term})) {
+      return cur.moveToFirst() ? cur.getLong(0) : -1;
+    }
+  }
+
+  private Course sample(String title, int day, long term, String weeks) {
+    Course c = new Course();
+    c.title = title;
+    c.day = day;
+    c.start = 1;
+    c.end = 2;
+    c.weeks = ScheduleRules.parseWeeks(weeks, 20);
+    c.semesterId = term;
+    return c;
+  }
+
   private void ui(Runnable r) {
     runOnMainSync(r);
     waitForIdleSync();
   }
 
-  private void networkChecks() throws Exception {
-    byte[] file;
-    try (InputStream in = getContext().getAssets().open("sample.xls");
-        ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-      byte[] buf = new byte[8192];
-      int n;
-      while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
-      file = out.toByteArray();
-    }
-    JSONObject payload =
+  /**
+   * Exercises the phone-side import path with no network involved: reading a worksheet, rendering
+   * the prompt payload, validating a reply shaped like the model's, and storing the result. The
+   * live AI call itself is deliberately never made from a test.
+   */
+  private void localImportChecks() throws Exception {
+    byte[] file = ("节次,,星期一\n,一,测试课程/(1-1节)1-3周，5周/示例教室/测试教师\n"
+        + ",二,测试课程/(2-2节)1-3周，5周/示例教室/测试教师").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    List<Sheets.Sheet> sheets = Sheets.read("synthetic.csv", file);
+    require(sheets.size() == 1, "synthetic CSV one sheet");
+    String content = Sheets.toPromptJson(sheets);
+    require(content.startsWith("{\"untrustedWorksheetData\":"), "prompt payload shape");
+    require(content.contains("测试课程"), "prompt payload carries cell text");
+    require(!content.contains("\"row\":0"), "prompt rows are 1-based");
+
+    JSONObject reply =
         new JSONObject()
-            .put("filename", "sample.xls")
             .put(
-                "contentBase64",
-                android.util.Base64.encodeToString(file, android.util.Base64.NO_WRAP))
-            .put("mode", "rules");
-    JSONObject parsed = http("/parse", payload, 200);
-    require(parsed.getString("mode").equals("rules"), "actual HTTP parser mode");
-    require(parsed.getJSONArray("courses").length() == 16, "actual XLS HTTP 16 arrangements");
-    require(parsed.getJSONArray("pending").length() == 2, "actual XLS HTTP 2 pending");
+                "courses",
+                new JSONArray()
+                    .put(
+                        new JSONObject()
+                            .put("title", "测试课程")
+                            .put("teacher", "测试教师")
+                            .put("room", "示例教室")
+                            .put("color", "#DCD5FF")
+                            .put("notes", "")
+                            .put("day", 1)
+                            .put("start", 1)
+                            .put("end", 1)
+                            .put("weeks", new JSONArray(new int[] {5, 1, 3, 1}))))
+            .put("pending", new JSONArray())
+            .put("warnings", new JSONArray())
+            .put(
+                "semester",
+                new JSONObject().put("name", "").put("startDate", "").put("totalWeeks", 20));
+    JSONObject parsed = ImportValidator.validate(reply);
+    require(parsed.getString("mode").equals("ai"), "validated mode is ai");
     require(
-        parsed.getJSONObject("semester").getString("startDate").equals("2026-09-07"),
-        "actual semester metadata");
+        parsed.getJSONObject("semester").getString("startDate").isEmpty(),
+        "unknown semester date not fabricated");
+    JSONObject course = parsed.getJSONArray("courses").getJSONObject(0);
+    require(course.getJSONArray("weeks").length() == 3, "duplicate weeks collapsed");
+    require(course.getJSONArray("weeks").getInt(0) == 1, "weeks sorted ascending");
+
+    JSONObject bad = new JSONObject(reply.toString());
+    bad.getJSONArray("courses").getJSONObject(0).put("color", "red");
+    try {
+      ImportValidator.validate(bad);
+      throw new AssertionError("invalid colour accepted");
+    } catch (IllegalArgumentException expected) {
+      checks++;
+    }
+    JSONObject badWeeks = new JSONObject(reply.toString());
+    badWeeks.getJSONArray("courses").getJSONObject(0).put("weeks", new JSONArray().put("1"));
+    try {
+      ImportValidator.validate(badWeeks);
+      throw new AssertionError("string week accepted");
+    } catch (IllegalArgumentException expected) {
+      checks++;
+    }
+
     Context context = getTargetContext();
     String name = "kejian-network-test.db";
     context.deleteDatabase(name);
@@ -214,8 +355,7 @@ public class SmokeTest extends Instrumentation {
     try {
       ScheduleDb.Term term = db.terms().get(0);
       JSONObject meta = parsed.getJSONObject("semester");
-      term.name = meta.getString("name");
-      term.start = meta.getString("startDate");
+      term.name = "虚构测试学期";
       term.weeks = meta.getInt("totalWeeks");
       db.saveTerm(term);
       List<Course> courses = new ArrayList<>();
@@ -226,52 +366,17 @@ public class SmokeTest extends Instrumentation {
         courses.add(c);
         names.add(c.title);
       }
-      require(names.size() == 10, "actual sample 10 course titles");
+      require(names.size() == 1, "synthetic sample one course title");
       require(
-          db.importResult(courses, term.id, parsed.getJSONArray("pending")) == 16,
+          db.importResult(courses, term.id, parsed.getJSONArray("pending")) == 1,
           "HTTP results saved to SQLite");
       require(
           db.importResult(courses, term.id, parsed.getJSONArray("pending")) == 0,
           "second HTTP import idempotent");
-      require(db.pending(term.id).length() == 2, "pending idempotent");
+      require(db.pending(term.id).length() == 0, "pending idempotent");
     } finally {
       db.close();
       context.deleteDatabase(name);
-    }
-    JSONObject health = http("/health", null, 200);
-    if (!health.getBoolean("configured")) {
-      payload.put("mode", "ai");
-      JSONObject error = http("/parse", payload, 503);
-      require(error.getString("error").contains("AI"), "unconfigured AI fails explicitly");
-    }
-  }
-
-  private JSONObject http(String path, JSONObject payload, int expected) throws Exception {
-    java.net.HttpURLConnection c =
-        (java.net.HttpURLConnection)
-            new java.net.URL("http://10.0.2.2:8765" + path).openConnection();
-    c.setConnectTimeout(10000);
-    c.setReadTimeout(15000);
-    try {
-      if (payload != null) {
-        c.setRequestMethod("POST");
-        c.setDoOutput(true);
-        c.setRequestProperty("Content-Type", "application/json");
-        try (OutputStream out = c.getOutputStream()) {
-          out.write(payload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        }
-      }
-      int status = c.getResponseCode();
-      if (status != expected) throw new AssertionError("HTTP " + status + " expected " + expected);
-      try (InputStream in = status < 400 ? c.getInputStream() : c.getErrorStream();
-          ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-        byte[] b = new byte[4096];
-        int n;
-        while ((n = in.read(b)) != -1) out.write(b, 0, n);
-        return new JSONObject(out.toString("UTF-8"));
-      }
-    } finally {
-      c.disconnect();
     }
   }
 
@@ -286,7 +391,7 @@ public class SmokeTest extends Instrumentation {
             imported.start = 13;
             imported.end = 14;
             imported.weeks = ScheduleRules.parseWeeks("1-3", 20);
-            Dialog d = CourseEditor.open(activity, imported, c -> {});
+            Dialog d = CourseEditor.open(activity, imported, (c, picked) -> {});
             ArrayList<Spinner> spinners = new ArrayList<>();
             collectSpinners(d.getWindow().getDecorView(), spinners);
             require(
@@ -297,16 +402,23 @@ public class SmokeTest extends Instrumentation {
                 "imported end14 preserved in editor");
             d.dismiss();
             activity.prefs.edit().putInt("periods", 1).commit();
-            Dialog fresh = CourseEditor.open(activity, null, c -> {});
+            Dialog fresh = CourseEditor.open(activity, null, (c, picked) -> {});
             spinners.clear();
             collectSpinners(fresh.getWindow().getDecorView(), spinners);
             require(
                 spinners.get(2).getSelectedItemPosition() == 0,
                 "one-period new course default valid");
+            View decor = fresh.getWindow().getDecorView();
+            require(
+                countDesc(decor, "选择课程颜色", "") == CourseColors.PALETTE.length,
+                "editor offers every palette swatch");
+            require(
+                countDesc(decor, "第", "周") == activity.term().weeks,
+                "week chips cover the whole term");
             fresh.dismiss();
             Course incomplete = new Course();
             incomplete.title = "";
-            Dialog pending = CourseEditor.open(activity, incomplete, c -> {});
+            Dialog pending = CourseEditor.open(activity, incomplete, (c, picked) -> {});
             require(pending.isShowing(), "incomplete pending opens for repair");
             pending.dismiss();
           });
@@ -351,6 +463,21 @@ public class SmokeTest extends Instrumentation {
       }
     }
     return null;
+  }
+
+  /** Counts views whose content description starts with {@code prefix} and ends with {@code suffix}. */
+  private int countDesc(View root, String prefix, String suffix) {
+    int n = 0;
+    CharSequence d = root.getContentDescription();
+    if (d != null) {
+      String s = d.toString();
+      if (s.startsWith(prefix) && s.endsWith(suffix)) n++;
+    }
+    if (root instanceof ViewGroup) {
+      ViewGroup g = (ViewGroup) root;
+      for (int i = 0; i < g.getChildCount(); i++) n += countDesc(g.getChildAt(i), prefix, suffix);
+    }
+    return n;
   }
 
   private void clickText(String value) {
