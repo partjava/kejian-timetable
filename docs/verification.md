@@ -6,13 +6,14 @@
 
 已通过：
 
-- `gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 成功。
+- `gradlew.bat :app:assembleDebug :app:lintDebug` 成功（移除插桩测试前后都验证过；移除前还带 `:app:assembleDebugAndroidTest`）。
 - 独立 Java `CourseColorsTest`：2084项检查通过。覆盖色板30格无重复且全部形如 `#RRGGBB`、原有6个种子色都在色板内、`valid()` 拒绝缺 `#`／位数不对／非十六进制字符、同名取色稳定、200个课程名能铺满全部种子色，以及2000个课程名连续取色不抛异常（含哈希最高位为1的名字，这是原先 `int(hex[:8],16)` 移植到 Java 后会下标越界的那一半）。
 - `ScheduleRulesTest` 14项、`XlsReaderTest` 30项仍通过，说明周次的保存路径没有改变。
-- 新增插桩检查 `colorChecks()`（独立测试数据库，不碰真机课表）：导入后同名颜色一致、重复导入不重染、`recolorTitle` 写穿整组且幂等、非法色值被拒绝且不改动数据、`unifyColors` 收敛到首条颜色且幂等、`deleteTerm` 后其他学期不受影响且 `courses`／`pending` 无孤儿行。新增编辑器检查：色板格数与周次格子数等于实际数量。
 - Android Lint：0错误、19条非阻断提示，与改动前同一条目集合（本次新增的 `ClickableViewAccessibility` 与 `RtlHardcoded` 已在 `SwipeRow` 上按理由显式抑制：左滑对读屏不可达属已知降级，RTL 手势镜像不在范围内）。
 
-**未验证**：以上插桩检查本轮没有在真机上执行，左滑手感、白色磨砂观感、红点位置这些只能人工确认的项目也都没做。1.2.0 的真机验收（含删除学期前先备份）待执行。
+**已移除真机插桩测试。** 应要求删掉了 `app/src/androidTest`（`SmokeTest`、`CleanStartTest` 及清单），并从 `app/build.gradle` 去掉 `testInstrumentationRunner`。理由是它需要额外安装一个测试 APK（`com.kejian.app.test`）。为本次改动新写的插桩检查（颜色一致、删学期不留孤儿行、色板与周次格子计数）尚未执行就随之删除，因此**本轮没有任何检查是在真机或模拟器上跑过的**。本文件下方的 `SmokeTest` / `CleanStartTest` 记录是当时的历史结果，现无对应源码，无法复跑。
+
+**未验证**：左滑手感、白色磨砂观感、红点位置这些只能人工确认的项目都没做。1.2.0 的真机验收（含删除学期前先备份）待执行。可自动化的部分现在只剩纯 Java 测试与构建/Lint。
 
 日期：2026-09-11。
 
@@ -67,7 +68,7 @@ Android Lint：0错误、12警告。非阻断警告包含较新版本提示、�
 
 自动化数据库测试使用专门命名的临时测试数据库，不清空用户课表。
 
-### 空白启动检查
+### 空白启动检查（源码已于 1.2.0 移除，以下为历史步骤）
 
 `adb shell am instrument -w <测试包>/com.kejian.app.CleanStartTest`：通过（默认学期存在、课程0条、待补充0条、无课表资源）。
 
@@ -95,8 +96,8 @@ Android Lint：0错误、12警告。非阻断警告包含较新版本提示、�
 
 ## 复测
 
-1. 执行上述Gradle构建命令。
-2. 安装 `app/build/outputs/apk/debug/app-debug.apk` 和 `app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`。
+1. 执行上述Gradle构建命令（1.2.0 起不再有 `:app:assembleDebugAndroidTest`）。
+2. 安装 `app/build/outputs/apk/debug/app-debug.apk`。1.2.0 起只需这一个 APK。
 3. 执行上述instrument命令。
 4. 空白启动检查按上一节换测试包名单独执行，不要在有数据的安装上跑。
 5. 手工验收导入：在「AI 配置」填入真实地址、模型和密钥 → 点「获取模型列表」核对模型名 → 「测试连接」→ 保存 → 「智能导入」选真实 .xls → 核对结果 → 保存。把结果记到本节上方。
