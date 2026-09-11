@@ -1,0 +1,59 @@
+# Android / Gradle build outputs and caches
+.gradle/
+.kotlin/
+build/
+out/
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.apks
+*.dex
+*.class
+
+# Machine-specific Android Studio configuration
+.idea/
+*.iml
+local.properties
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Secrets and private signing material
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+keystore.properties
+key.properties
+secrets.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Editor / OS temporary files and logs
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# Keep the Gradle wrapper needed to build the project
+!gradle/wrapper/gradle-wrapper.jar
