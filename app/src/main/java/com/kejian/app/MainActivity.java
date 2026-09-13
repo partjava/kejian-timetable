@@ -27,6 +27,15 @@ public class MainActivity extends Activity {
   private ImportController importer;
   private static final int BACKUP = 201, RESTORE = 202;
 
+  /** Periods per half-day block; the default timetable is 上午 1–4 / 下午 5–8 / 晚上 9–12. */
+  private static final int BLOCK = 4;
+
+  /** How many blocks carry a 预备铃. Periods past the last one simply have none. */
+  private static final int BELL_COUNT = 3;
+
+  /** Caption prefix of a bell field. {@link #pickTime} reapplies it, so it stays on screen. */
+  private static final String BELL_LABEL = "预备铃 ";
+
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
@@ -105,8 +114,10 @@ public class MainActivity extends Activity {
     return times(
         "starts",
         new String[] {
-          "08:00", "08:55", "10:00", "10:55", "14:00", "14:55", "16:00", "16:55", "19:00", "19:55",
-          "20:50", "21:45", "22:00", "22:30", "23:00", "23:30"
+          // 上午 1-4，下午 5-8，晚上 9-12：每节 45 分钟，课间 5 分钟，两段大课间 20 分钟。
+          // 13-16 节是留白，只用在一学期超过 12 节的学校；默认值必须自身通过「保存作息」的校验。
+          "08:30", "09:20", "10:25", "11:15", "13:40", "14:30", "15:35", "16:25", "18:20", "19:10",
+          "20:15", "21:05", "22:00", "22:30", "23:00", "23:30"
         });
   }
 
@@ -114,9 +125,36 @@ public class MainActivity extends Activity {
     return times(
         "ends",
         new String[] {
-          "08:45", "09:40", "10:45", "11:40", "14:45", "15:40", "16:45", "17:40", "19:45", "20:40",
-          "21:35", "22:00", "22:25", "22:55", "23:25", "23:55"
+          "09:15", "10:05", "11:10", "12:00", "14:25", "15:15", "16:20", "17:10", "19:05", "19:55",
+          "21:00", "21:50", "22:25", "22:55", "23:25", "23:55"
         });
+  }
+
+  /**
+   * The 预备铃 of each half-day block: periods 1, 5 and 9. Index {@code b} is the bell before
+   * period {@code b * BLOCK + 1}, so blocks follow the same 上午/下午/晚上 split the default
+   * timetable uses. Editable on the 作息时间 page.
+   */
+  private String[] bellTimes() {
+    String[] v = prefs.getString("bells", "").split(",", -1);
+    return v.length == 3 ? v : new String[] {"08:25", "13:35", "18:15"};
+  }
+
+  /** Block index of a 1-based period, or -1 past the last block the bells cover. */
+  private static int blockOf(int period) {
+    int b = (period - 1) / BLOCK;
+    return b < BELL_COUNT ? b : -1;
+  }
+
+  /**
+   * The 预备铃 to show for a period, or null.
+   *
+   * A bell belongs to a half-day block, so only that block's first period carries one. Showing
+   * period 3's row the bell that rang before period 1 would be reporting something already past.
+   */
+  private String bellFor(int period) {
+    int b = blockOf(period);
+    return b < 0 || (period - 1) % BLOCK != 0 ? null : bellTimes()[b];
   }
 
   private String[] times(String key, String[] fallback) {
@@ -484,7 +522,7 @@ public class MainActivity extends Activity {
     if (list.isEmpty()) body.addView(Ui.empty(this, "今天没有课程", "去课表看看接下来一周的安排吧"));
     boolean next = false;
     for (Course c : list) {
-      String status;
+      String status, bell = null;
       LocalTime now = LocalTime.now(),
           s = LocalTime.parse(startTimes()[c.start - 1]),
           e = LocalTime.parse(endTimes()[c.end - 1]);
@@ -492,10 +530,19 @@ public class MainActivity extends Activity {
       else if (!now.isBefore(s)) status = "进行中";
       else if (!next) {
         status = "下一节";
+        // Only the next class gets its bell: a 预备铃 for a class already under way is noise.
+        bell = bellFor(c.start);
         next = true;
       } else status = "待上课";
       LinearLayout card =
-          courseCard(c, status + "  ·  " + startTimes()[c.start - 1] + "–" + endTimes()[c.end - 1]);
+          courseCard(
+              c,
+              status
+                  + (bell == null ? "" : "  ·  预备铃 " + bell)
+                  + "  ·  "
+                  + startTimes()[c.start - 1]
+                  + "–"
+                  + endTimes()[c.end - 1]);
       body.addView(SwipeRow.wrap(this, card, () -> confirmDelete(c)));
       Ui.gap(body, 12);
     }
@@ -781,7 +828,7 @@ public class MainActivity extends Activity {
     setting(body, "备份课表", "导出所有学期为本地 JSON 文件", this::backup);
     setting(body, "恢复课表", "作为新学期恢复，保留已有数据", this::restore);
     Ui.gap(body, 20);
-    TextView footer = Ui.text(this, "个人课表 1.2.0\nJava 原生安卓 · 课表随身记", 12, Ui.MUTED, false);
+    TextView footer = Ui.text(this, "个人课表 1.2.0\n 私人使用 切勿商用", 12, Ui.MUTED, false);
     footer.setGravity(Gravity.CENTER);
     footer.setLineSpacing(Ui.dp(this, 6), 1);
     body.addView(footer);
@@ -979,12 +1026,12 @@ public class MainActivity extends Activity {
   }
 
   private void showTimes() {
-    LinearLayout root = subScreen("作息时间", "设置每天节数和每节课的起止时间");
+    LinearLayout root = subScreen("作息时间", "设置每天节数、每节课的起止时间和预备铃");
     LinearLayout body = content(root);
     String[] options = new String[16];
     for (int i = 0; i < 16; i++) options[i] = (i + 1) + " 节";
     Spinner count = Ui.select(this, "每天节数", options, periods() - 1, body);
-    String[] starts = startTimes(), ends = endTimes();
+    String[] starts = startTimes(), ends = endTimes(), bells = bellTimes();
     LinearLayout rows = Ui.col(this);
     body.addView(rows);
     Runnable render =
@@ -992,6 +1039,18 @@ public class MainActivity extends Activity {
           rows.removeAllViews();
           for (int i = 0; i < count.getSelectedItemPosition() + 1; i++) {
             final int k = i;
+            // Captioned once above the block's first period, not as a third time field in all four
+            // of its rows — bellFor returns null for anything but a block's first period.
+            if (bellFor(i + 1) != null) {
+              final int block = blockOf(i + 1);
+              TextView bell = Ui.text(this, BELL_LABEL + bells[block], 13, Ui.PRIMARY, true);
+              bell.setGravity(Gravity.CENTER_VERTICAL);
+              bell.setMinHeight(Ui.dp(this, 40));
+              // No contentDescription: the visible "预备铃 08:25" is the whole story, and a
+              // description written here would go stale the moment the bell is edited.
+              bell.setOnClickListener(v -> pickTime(bells, block, bell, BELL_LABEL));
+              rows.addView(bell);
+            }
             LinearLayout r = Ui.row(this);
             Ui.pad(r, 0, 6);
             r.addView(
@@ -1036,11 +1095,18 @@ public class MainActivity extends Activity {
                   if (i > 0 && LocalTime.parse(starts[i]).isBefore(LocalTime.parse(ends[i - 1])))
                     throw new IllegalArgumentException("第" + (i + 1) + "节与上一节时间重叠");
                 }
+                // Only blocks the timetable actually reaches: shortening the day to three periods
+                // must not be blocked by a bell for period 5 that nothing shows any more.
+                for (int b = 0; b < BELL_COUNT && b * BLOCK < n; b++)
+                  if (LocalTime.parse(bells[b]).isAfter(LocalTime.parse(starts[b * BLOCK])))
+                    throw new IllegalArgumentException(
+                        "第" + (b * BLOCK + 1) + "节的预备铃不能晚于上课时间");
                 prefs
                     .edit()
                     .putInt("periods", n)
                     .putString("starts", String.join(",", starts))
                     .putString("ends", String.join(",", ends))
+                    .putString("bells", String.join(",", bells))
                     .apply();
                 toast("作息已保存");
                 showTab(3);
@@ -1051,12 +1117,21 @@ public class MainActivity extends Activity {
   }
 
   private void pickTime(String[] values, int index, TextView target) {
+    pickTime(values, index, target, "");
+  }
+
+  /**
+   * Edits one entry of {@code values} in place. The {@code prefix} is part of the field's text and
+   * has to be re-applied on every change, or a bell field would lose its "预备铃" label as soon as
+   * the user picked a time.
+   */
+  private void pickTime(String[] values, int index, TextView target, String prefix) {
     LocalTime t = LocalTime.parse(values[index]);
     new TimePickerDialog(
             this,
             (v, h, m) -> {
               values[index] = String.format(Locale.ROOT, "%02d:%02d", h, m);
-              target.setText(values[index]);
+              target.setText(prefix + values[index]);
             },
             t.getHour(),
             t.getMinute(),
