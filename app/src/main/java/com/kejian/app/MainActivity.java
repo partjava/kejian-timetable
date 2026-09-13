@@ -828,7 +828,10 @@ public class MainActivity extends Activity {
     setting(body, "备份课表", "导出所有学期为本地 JSON 文件", this::backup);
     setting(body, "恢复课表", "作为新学期恢复，保留已有数据", this::restore);
     Ui.gap(body, 20);
-    TextView footer = Ui.text(this, "个人课表 1.2.0\n 私人使用 切勿商用", 12, Ui.MUTED, false);
+    // The only place the app states its terms. Kept short: it is a personal project, and the
+    // licence file in the repository carries the detail.
+    TextView footer =
+        Ui.text(this, "个人课表 1.2.0\n私人使用，切勿商用 · 保留所有权利", 12, Ui.MUTED, false);
     footer.setGravity(Gravity.CENTER);
     footer.setLineSpacing(Ui.dp(this, 6), 1);
     body.addView(footer);
