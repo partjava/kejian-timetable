@@ -7,13 +7,13 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.*;
 import android.widget.*;
 import java.io.*;
-import java.net.HttpURLConnection;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
 import org.json.*;
 
 /**
@@ -32,7 +32,9 @@ public class ImportController {
   private String filename = "";
   private boolean closed, busy;
   private int generation;
-  private final AtomicReference<HttpURLConnection> active = new AtomicReference<>();
+  private RequestCancellation importRequest, configRequest;
+  private Future<?> importFuture, configFuture;
+  private int configRevision, testedRevision = -1;
   private final List<Course> parsed = new ArrayList<>();
   private final List<Boolean> selected = new ArrayList<>();
   private JSONArray pending = new JSONArray();
@@ -46,6 +48,7 @@ public class ImportController {
       if (!raw.isEmpty()) {
         JSONObject draft = new JSONObject(raw);
         targetTerm = draft.getLong("targetTerm");
+        if (!a.db.hasTerm(targetTerm)) throw new IllegalArgumentException("目标学期已删除");
         result = draft.getJSONObject("result");
         filename = draft.optString("filename", "");
         pending = result.optJSONArray("pending");
@@ -84,10 +87,46 @@ public class ImportController {
 
   private void clearDraft() {
     result = null;
+    parsed.clear();
+    selected.clear();
+    pending = new JSONArray();
     a.prefs.edit().remove("importDraft").apply();
   }
 
+  public void discardTerm(long term) {
+    if (targetTerm == term) {
+      cancelImport();
+      clearDraft();
+      targetTerm = 0;
+    }
+  }
+
+  private void cancelImport() {
+    generation++;
+    busy = false;
+    if (importFuture != null) importFuture.cancel(true);
+    if (importRequest != null) importRequest.cancel();
+  }
+
+  private void invalidateConfig() {
+    configRevision++;
+    testedRevision = -1;
+    if (configFuture != null) configFuture.cancel(true);
+    if (configRequest != null) configRequest.cancel();
+  }
+
+  public void leaveConfigScreen() {
+    invalidateConfig();
+  }
+
+  private void deliverConfig(int revision, TextView status, Runnable task) {
+    deliver(() -> {
+      if (revision == configRevision && status.isAttachedToWindow()) task.run();
+    });
+  }
+
   private LinearLayout body(LinearLayout root) {
+    invalidateConfig();
     ScrollView s = new ScrollView(a);
     root.addView(s, new LinearLayout.LayoutParams(-1, 0, 1));
     LinearLayout b = Ui.col(a);
@@ -201,6 +240,18 @@ public class ImportController {
     key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
     key.setHint(AiConfig.hasKey(a) ? "已保存，留空则不修改" : "粘贴你的 API 密钥");
     TextView status = Ui.text(a, "不确定模型名称时，可先点「获取模型列表」", 14, Ui.MUTED, false);
+    TextWatcher watcher = new TextWatcher() {
+      public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+      public void onTextChanged(CharSequence s, int start, int before, int count) {}
+      public void afterTextChanged(Editable text) {
+        invalidateConfig();
+        status.setText("配置已修改，请重新测试连接");
+      }
+    };
+    endpoint.addTextChangedListener(watcher);
+    model.addTextChangedListener(watcher);
+    key.addTextChangedListener(watcher);
+    key.setSaveEnabled(false);
     b.addView(status);
     Ui.gap(b, 18);
     b.addView(Ui.button(a, "获取模型列表", false, () -> listModels(endpoint, key, model, status)));
@@ -227,6 +278,8 @@ public class ImportController {
   }
 
   private void test(EditText endpoint, EditText model, EditText key, TextView status) {
+    invalidateConfig();
+    final int revision = configRevision;
     String url = AiConfig.normalize(endpoint.getText().toString());
     List<String> problems = AiConfig.validate(url);
     if (!problems.isEmpty()) {
@@ -245,13 +298,17 @@ public class ImportController {
       return;
     }
     status.setText("正在测试连接…");
-    executor.execute(
+    final RequestCancellation request = configRequest = new RequestCancellation();
+    configFuture = executor.submit(
         () -> {
           try {
-            AiClient.test(url, modelName, secret);
-            deliver(() -> status.setText("连接成功：地址、密钥和模型都可以使用"));
+            AiClient.test(url, modelName, secret, request);
+            deliverConfig(revision, status, () -> {
+              testedRevision = revision;
+              status.setText("连接成功：地址、密钥和模型都可以使用");
+            });
           } catch (Exception e) {
-            deliver(() -> status.setText("连接失败：" + e.getMessage()));
+            deliverConfig(revision, status, () -> status.setText("连接失败：" + e.getMessage()));
           }
         });
   }
@@ -261,6 +318,8 @@ public class ImportController {
    * /models route keep working: the field stays editable and the reason lands in the status line.
    */
   private void listModels(EditText endpoint, EditText key, EditText model, TextView status) {
+    invalidateConfig();
+    final int revision = configRevision;
     String url = AiConfig.normalize(endpoint.getText().toString());
     List<String> problems = AiConfig.validate(url);
     if (!problems.isEmpty()) {
@@ -274,13 +333,14 @@ public class ImportController {
       return;
     }
     status.setText("正在获取模型列表…");
-    executor.execute(
+    final RequestCancellation request = configRequest = new RequestCancellation();
+    configFuture = executor.submit(
         () -> {
           try {
-            List<String> ids = AiClient.models(url, secret);
-            deliver(() -> chooseModel(ids, model, status));
+            List<String> ids = AiClient.models(url, secret, request);
+            deliverConfig(revision, status, () -> chooseModel(ids, model, status));
           } catch (Exception e) {
-            deliver(() -> status.setText("获取失败：" + e.getMessage()));
+            deliverConfig(revision, status, () -> status.setText("获取失败：" + e.getMessage()));
           }
         });
   }
@@ -310,10 +370,13 @@ public class ImportController {
       if (!problems.isEmpty()) throw new IllegalArgumentException(problems.get(0));
       String modelName = model.getText().toString().trim();
       if (modelName.isEmpty()) throw new IllegalArgumentException("请填写模型名称");
+      boolean tested = testedRevision == configRevision;
       AiConfig.save(a, url, modelName, key.getText().toString());
+      invalidateConfig();
       key.setText("");
       key.setHint(AiConfig.hasKey(a) ? "已保存，留空则不修改" : "粘贴你的 API 密钥");
-      status.setText("已保存");
+      if (tested) testedRevision = configRevision;
+      status.setText(tested ? "已保存，当前配置已通过测试" : "已保存，尚未验证，请测试连接");
       a.toast("AI 配置已保存");
     } catch (Exception e) {
       Ui.error(a, e);
@@ -327,6 +390,10 @@ public class ImportController {
     final int token = ++generation;
     final Uri selectedUri = uri;
     final String name = filename;
+    final String url = AiConfig.normalize(AiConfig.url(a)), modelName = AiConfig.model(a);
+    final String secret = AiConfig.key(a);
+    final long requestTerm = targetTerm;
+    final RequestCancellation request = importRequest = new RequestCancellation();
     LinearLayout root = a.subScreen("正在识别", "识别完成后，你可以检查每一项安排");
     LinearLayout b = body(root);
     Ui.gap(b, 60);
@@ -342,27 +409,26 @@ public class ImportController {
             a,
             "取消识别",
             () -> {
-              generation++;
-              busy = false;
-              HttpURLConnection conn = active.getAndSet(null);
-              if (conn != null) conn.disconnect();
+              cancelImport();
               open();
             }));
-    executor.execute(
+    importFuture = executor.submit(
         () -> {
           try {
-            String secret = AiConfig.key(a);
+            request.check();
             if (secret == null)
               throw new IllegalStateException("尚未配置 API 密钥，请先到「AI 配置」填写");
             byte[] bytes = a.readLimited(selectedUri, MAX_FILE);
+            request.check();
             String content = Sheets.toPromptJson(Sheets.read(name, bytes));
+            request.check();
             JSONObject raw =
                 AiClient.parse(
-                    AiConfig.normalize(AiConfig.url(a)),
-                    AiConfig.model(a),
+                    url,
+                    modelName,
                     secret,
                     content,
-                    active);
+                    request);
             JSONObject response = ImportValidator.validate(raw);
             JSONArray records = response.getJSONArray("courses");
             List<Course> cs = new ArrayList<>();
@@ -372,6 +438,12 @@ public class ImportController {
                 () -> {
                   if (token != generation) return;
                   busy = false;
+                  if (!a.db.hasTerm(requestTerm)) {
+                    clearDraft();
+                    a.toast("目标学期已删除，请重新导入");
+                    open();
+                    return;
+                  }
                   result = response;
                   parsed.clear();
                   parsed.addAll(cs);
@@ -394,6 +466,12 @@ public class ImportController {
   }
 
   private void review() {
+    if (!a.db.hasTerm(targetTerm)) {
+      clearDraft();
+      a.toast("目标学期已删除，请重新导入");
+      open();
+      return;
+    }
     a.termId = targetTerm;
     saveDraft();
     LinearLayout root = a.subScreen("识别结果", "预览、修改，确认后才会保存");
@@ -598,6 +676,11 @@ public class ImportController {
 
   private void commit() {
     try {
+      if (!a.db.hasTerm(targetTerm)) {
+        clearDraft();
+        open();
+        throw new IllegalArgumentException("目标学期已删除，请重新导入");
+      }
       List<Course> chosen = new ArrayList<>(), existing = a.db.courses(targetTerm);
       int duplicate = 0;
       for (int i = 0; i < parsed.size(); i++) {
@@ -673,9 +756,8 @@ public class ImportController {
 
   public void close() {
     closed = true;
-    generation++;
-    HttpURLConnection conn = active.getAndSet(null);
-    if (conn != null) conn.disconnect();
+    cancelImport();
+    invalidateConfig();
     executor.shutdownNow();
   }
 }

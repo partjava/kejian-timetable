@@ -1,0 +1,9 @@
+// Isolated QA package. Never install this build over the user's real application.
+allprojects {
+    afterEvaluate { project ->
+        if (project.plugins.hasPlugin('com.android.application')) {
+            project.android.defaultConfig.applicationId = 'com.kejian.reviewfix20260913'
+            project.android.defaultConfig.testInstrumentationRunner = 'com.kejian.app.ReviewRegressionTest'
+        }
+    }
+}

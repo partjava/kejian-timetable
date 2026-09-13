@@ -44,13 +44,12 @@ public final class Sheets {
     throw new IOException("仅支持 .xls 和 .csv 文件");
   }
 
-  private static List<Sheet> readCsv(byte[] data) {
+  private static List<Sheet> readCsv(byte[] data) throws IOException {
     List<String> lines = splitCsv(decode(data));
     List<String[]> rows = new ArrayList<>();
     for (String line : lines) {
-      if (rows.size() >= 2000) break;
       List<String> cells = parseCsvLine(line);
-      String[] row = new String[Math.min(cells.size(), 100)];
+      String[] row = new String[cells.size()];
       for (int i = 0; i < row.length; i++) row[i] = cells.get(i).trim();
       rows.add(row);
     }
@@ -58,7 +57,7 @@ public final class Sheets {
   }
 
   /** RFC 4180-ish split: quoted fields may contain commas, quotes and newlines. */
-  private static List<String> splitCsv(String text) {
+  private static List<String> splitCsv(String text) throws IOException {
     List<String> lines = new ArrayList<>();
     StringBuilder line = new StringBuilder();
     boolean quoted = false;
@@ -67,17 +66,22 @@ public final class Sheets {
       if (ch == '"') quoted = !quoted;
       if (!quoted && (ch == '\n' || ch == '\r')) {
         if (ch == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') i++;
-        lines.add(line.toString());
+        addCsvRow(lines, line.toString());
         line.setLength(0);
         continue;
       }
       line.append(ch);
     }
-    lines.add(line.toString());
+    if (line.length() > 0 || lines.isEmpty()) addCsvRow(lines, line.toString());
     return lines;
   }
 
-  private static List<String> parseCsvLine(String line) {
+  private static void addCsvRow(List<String> lines, String line) throws IOException {
+    if (lines.size() >= 2000) throw new IOException("CSV 超过2000行，请拆分文件后导入");
+    lines.add(line);
+  }
+
+  private static List<String> parseCsvLine(String line) throws IOException {
     List<String> out = new ArrayList<>();
     StringBuilder field = new StringBuilder();
     boolean quoted = false;
@@ -98,6 +102,7 @@ public final class Sheets {
         quoted = true;
       } else if (ch == ',') {
         out.add(field.toString());
+        if (out.size() >= 100) throw new IOException("CSV 超过100列，请只保留课表内容");
         field.setLength(0);
       } else {
         field.append(ch);

@@ -76,6 +76,7 @@ public class ScheduleDb extends SQLiteOpenHelper {
   }
 
   public void savePending(long term, JSONArray items) throws JSONException {
+    requireTerm(term);
     JSONArray existing = pending(term);
     for (int i = 0; i < items.length(); i++) {
       JSONObject item = items.getJSONObject(i);
@@ -130,6 +131,15 @@ public class ScheduleDb extends SQLiteOpenHelper {
   public Term term(long id) {
     for (Term t : terms()) if (t.id == id) return t;
     return terms().get(0);
+  }
+
+  public boolean hasTerm(long id) {
+    for (Term t : terms()) if (t.id == id) return true;
+    return false;
+  }
+
+  private void requireTerm(long id) {
+    if (!hasTerm(id)) throw new IllegalArgumentException("目标学期已不存在，请重新选择学期");
   }
 
   public long saveTerm(Term t) {
@@ -299,6 +309,7 @@ public class ScheduleDb extends SQLiteOpenHelper {
   }
 
   public long save(Course c) {
+    requireTerm(c.semesterId);
     try {
       c.validate(term(c.semesterId).weeks, 16);
       ContentValues v = new ContentValues();
@@ -322,6 +333,7 @@ public class ScheduleDb extends SQLiteOpenHelper {
     d.beginTransaction();
     try {
       List<Course> existing = courses(term);
+      requireTerm(term);
       // Same title, same colour: seeded from what this term already has, so a re-import can never
       // repaint the schedule the user is looking at.
       Map<String, String> byTitle = new LinkedHashMap<>();

@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -58,7 +57,7 @@ public final class AiClient {
       String model,
       String key,
       String content,
-      AtomicReference<HttpURLConnection> active)
+      RequestCancellation active)
       throws Exception {
     JSONObject envelope = call(url, model, key, PROMPT, content, active);
     return content(envelope);
@@ -69,6 +68,10 @@ public final class AiClient {
    * Used by the 测试连接 button, so it costs one very small request.
    */
   public static void test(String url, String model, String key) throws Exception {
+    test(url, model, key, new RequestCancellation());
+  }
+
+  static void test(String url, String model, String key, RequestCancellation request) throws Exception {
     JSONObject envelope =
         call(
             url,
@@ -76,7 +79,7 @@ public final class AiClient {
             key,
             "只返回 JSON 对象，无 Markdown。",
             "回复 {\"ok\":true}，不要输出其他内容。",
-            null);
+            request);
     JSONObject reply = content(envelope);
     if (!reply.optBoolean("ok", false)) throw new IOException("连接成功，但模型未按要求返回 JSON");
   }
@@ -86,7 +89,11 @@ public final class AiClient {
    * not implement /models fail here with a readable message and manual entry keeps working.
    */
   public static List<String> models(String url, String key) throws Exception {
-    String text = get(modelsUrl(url), key);
+    return models(url, key, new RequestCancellation());
+  }
+
+  static List<String> models(String url, String key, RequestCancellation request) throws Exception {
+    String text = get(modelsUrl(url), key, request);
     JSONArray data = null;
     try {
       data = new JSONObject(text).optJSONArray("data");
@@ -143,8 +150,9 @@ public final class AiClient {
       String key,
       String system,
       String user,
-      AtomicReference<HttpURLConnection> active)
+      RequestCancellation active)
       throws Exception {
+    active.check();
     JSONObject body =
         new JSONObject()
             .put("model", model)
@@ -165,8 +173,8 @@ public final class AiClient {
       // letting a raw MalformedURLException reach the user.
       throw new IOException("API 地址无法使用：" + e.getMessage());
     }
-    if (active != null) active.set(connection);
     try {
+      active.attach(connection);
       connection.setRequestMethod("POST");
       connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
       connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -175,7 +183,9 @@ public final class AiClient {
       connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
       connection.setRequestProperty("Authorization", "Bearer " + key);
       connection.setFixedLengthStreamingMode(payload.length);
+      active.check();
       try (OutputStream out = connection.getOutputStream()) {
+        active.check();
         out.write(payload);
       }
 
@@ -195,12 +205,13 @@ public final class AiClient {
       throw new IOException("无法连接 AI 服务：" + e.getMessage());
     } finally {
       connection.disconnect();
-      if (active != null) active.compareAndSet(connection, null);
+      active.detach(connection);
     }
   }
 
   /** A GET with the same no-redirect, no-retry policy as {@link #call}; used only for /models. */
-  private static String get(String url, String key) throws IOException {
+  private static String get(String url, String key, RequestCancellation request) throws IOException {
+    request.check();
     HttpURLConnection connection;
     try {
       connection = (HttpURLConnection) new URL(url).openConnection();
@@ -208,11 +219,13 @@ public final class AiClient {
       throw new IOException("API 地址无法使用：" + e.getMessage());
     }
     try {
+      request.attach(connection);
       connection.setRequestMethod("GET");
       connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
       connection.setReadTimeout(READ_TIMEOUT_MS);
       connection.setInstanceFollowRedirects(false);
       connection.setRequestProperty("Authorization", "Bearer " + key);
+      request.check();
       int status = connection.getResponseCode();
       String text = read(connection, status);
       if (status < 200 || status >= 300)
@@ -227,6 +240,7 @@ public final class AiClient {
       throw new IOException("无法连接 AI 服务：" + e.getMessage());
     } finally {
       connection.disconnect();
+      request.detach(connection);
     }
   }
 

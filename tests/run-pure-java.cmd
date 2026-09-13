@@ -30,9 +30,11 @@ if not exist "tests\build" mkdir "tests\build"
   app\src\main\java\com\kejian\app\Sheets.java ^
   tests\CourseColorsTest.java ^
   tests\ScheduleRulesTest.java ^
-  tests\XlsReaderTest.java
+  tests\XlsReaderTest.java ^
+  tests\CsvLimitsTest.java
 if errorlevel 1 exit /b 1
 
 "%JAVA%" -Dstdout.encoding=UTF-8 -cp tests\build CourseColorsTest || exit /b 1
 "%JAVA%" -Dstdout.encoding=UTF-8 -cp tests\build ScheduleRulesTest || exit /b 1
 "%JAVA%" -Dstdout.encoding=UTF-8 -cp tests\build XlsReaderTest || exit /b 1
+"%JAVA%" -Dstdout.encoding=UTF-8 -cp tests\build CsvLimitsTest || exit /b 1

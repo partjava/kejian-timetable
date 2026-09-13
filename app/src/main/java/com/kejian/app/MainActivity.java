@@ -240,6 +240,7 @@ public class MainActivity extends Activity {
    * keep offering to file courses into a term that no longer exists.
    */
   private void clearDraftFor(long term) {
+    if (importer != null) importer.discardTerm(term);
     String raw = prefs.getString("importDraft", null);
     if (raw == null) return;
     try {
@@ -252,6 +253,7 @@ public class MainActivity extends Activity {
   }
 
   public void showTab(int target) {
+    if (importer != null) importer.leaveConfigScreen();
     displayWeek = Math.max(1, Math.min(term().weeks, displayWeek));
     tab = target;
     subpage = false;
@@ -313,6 +315,7 @@ public class MainActivity extends Activity {
   }
 
   public LinearLayout subScreen(String title, String subtitle) {
+    if (importer != null) importer.leaveConfigScreen();
     subpage = true;
     navigation.setVisibility(View.GONE);
     page.removeAllViews();
@@ -831,7 +834,7 @@ public class MainActivity extends Activity {
     // The only place the app states its terms. Kept short: it is a personal project, and the
     // licence file in the repository carries the detail.
     TextView footer =
-        Ui.text(this, "个人课表 1.2.0\n私人使用，切勿商用 · 保留所有权利", 12, Ui.MUTED, false);
+        Ui.text(this, "个人课表 1.2.1\n私人使用，切勿商用 · 保留所有权利", 12, Ui.MUTED, false);
     footer.setGravity(Gravity.CENTER);
     footer.setLineSpacing(Ui.dp(this, 6), 1);
     body.addView(footer);
