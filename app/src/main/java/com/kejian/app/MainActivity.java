@@ -160,7 +160,8 @@ public class MainActivity extends Activity {
       int changed = db.unifyColors();
       prefs.edit().putInt("colorsUnifiedCount", changed).apply();
       toast(changed == 0 ? "同名课程颜色已经一致" : "已统一 " + changed + " 项安排的颜色");
-      showSettings();
+      // showTab, never showSettings: screen() appends to `page` and only showTab clears it first.
+      showTab(3);
     } catch (Exception e) {
       Ui.error(this, e);
     }
@@ -275,6 +276,11 @@ public class MainActivity extends Activity {
     return body;
   }
 
+  /**
+   * Builds a tab screen. Appends to {@code page} without clearing it, so it may only be reached
+   * through {@link #showTab(int)}; calling a tab renderer directly stacks a second copy on top of
+   * the first, which reads as garbled overlapping text. Sub-pages use {@link #subScreen}.
+   */
   private LinearLayout screen(String title, String subtitle) {
     LinearLayout root = Ui.col(this);
     page.addView(root, new FrameLayout.LayoutParams(-1, -1));
