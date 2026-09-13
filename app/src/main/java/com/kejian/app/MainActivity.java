@@ -155,6 +155,36 @@ public class MainActivity extends Activity {
     }
   }
 
+  /**
+   * The one-off repair for timetables coloured before {@link CourseColors#pick} existed, where two
+   * different courses could end up wearing the same colour. Behind a confirmation because it
+   * rewrites colours the user chose, and behind a button rather than a launch-time migration for
+   * the same reason — see {@link #unifyColorsOnce} for the repair that does run by itself.
+   */
+  private void confirmSpread() {
+    new AlertDialog.Builder(this)
+        .setTitle("重排课程颜色？")
+        .setMessage(
+            "同名课程共用一个颜色，不同的课各用一种颜色。\n"
+                + "现有课表的配色会被改写，建议先「备份课表」。")
+        .setNegativeButton("取消", null)
+        .setPositiveButton("重排", (d, w) -> runSpread())
+        .show();
+  }
+
+  private void runSpread() {
+    try {
+      // Unify first: spread reads each title's colour off its first arrangement, so a title whose
+      // arrangements still disagree would be spread from an arbitrary one of them.
+      int changed = db.unifyColors(termId) + db.spreadColors(termId);
+      prefs.edit().putInt("colorsSpreadCount", changed).apply();
+      toast(changed == 0 ? "当前学期的课程颜色已经互不相同" : "已重排 " + changed + " 项安排的颜色");
+      showTab(3);
+    } catch (Exception e) {
+      Ui.error(this, e);
+    }
+  }
+
   private void runUnify() {
     try {
       int changed = db.unifyColors();
@@ -579,7 +609,7 @@ public class MainActivity extends Activity {
     String known = db.colorFor(value.semesterId, value.title);
     if (colorPicked) return known != null && !known.equalsIgnoreCase(value.color);
     if (known != null) value.color = known;
-    else if (fresh) value.color = CourseColors.seed(value.title);
+    else if (fresh) value.color = CourseColors.pick(value.title, db.colorsInUse(value.semesterId));
     return false;
   }
 
@@ -747,6 +777,7 @@ public class MainActivity extends Activity {
         "统一同名课程颜色",
         "已处理 " + prefs.getInt("colorsUnifiedCount", 0) + " 项 · 点击重新检查",
         this::runUnify);
+    setting(body, "重排课程颜色", "让不同的课各用一种颜色 · 会改写当前学期配色", this::confirmSpread);
     setting(body, "备份课表", "导出所有学期为本地 JSON 文件", this::backup);
     setting(body, "恢复课表", "作为新学期恢复，保留已有数据", this::restore);
     Ui.gap(body, 20);
@@ -785,7 +816,7 @@ public class MainActivity extends Activity {
     // Seeded rather than left at the default lavender: this is the path that most often creates a
     // second arrangement of a course already on the timetable, and the picker should open showing
     // the colour that course already wears. applyTitleColor overrides it when the title exists.
-    c.color = CourseColors.seed(title);
+    c.color = CourseColors.pick(title, db.colorsInUse(termId));
     CourseEditor.open(
         this,
         c,

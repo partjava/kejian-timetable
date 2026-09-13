@@ -521,10 +521,10 @@ public class ImportController {
                   c.title = p.optString("title");
                   c.notes = p.optString("notes");
                   c.weeks = ScheduleRules.parseWeeks("1-" + a.term().weeks, a.term().weeks);
-                  // Shown seeded, so the preview matches what commit() will store. importCourses
-                  // recomputes colours from the title at commit time, so a colour chosen here is a
-                  // preview rather than a promise — the timetable's colours stay deterministic.
-                  c.color = CourseColors.seed(c.title);
+                  // Shown picked, so the preview matches what commit() will store. importCourses
+                  // still recomputes the colour at commit time — from the title and whatever the
+                  // term wears by then — so a colour chosen here is a preview rather than a promise.
+                  c.color = CourseColors.pick(c.title, a.db.colorsInUse(a.term().id));
                   CourseEditor.open(
                       a,
                       c,

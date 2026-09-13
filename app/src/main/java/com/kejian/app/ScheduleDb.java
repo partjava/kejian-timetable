@@ -204,6 +204,20 @@ public class ScheduleDb extends SQLiteOpenHelper {
     return null;
   }
 
+  /**
+   * The colours the titles of this term wear, one entry per title.
+   *
+   * Used to keep a new course off a colour a different course is already using: {@link
+   * CourseColors#pick} takes this set and returns something free. Not the same thing as the raw
+   * colours of every row — a title whose arrangements disagree contributes once, its canonical
+   * colour, which is what the timetable actually shows.
+   */
+  public Set<String> colorsInUse(long term) {
+    Map<String, String> byTitle = new LinkedHashMap<>();
+    for (Course c : courses(term)) byTitle.putIfAbsent(c.title, c.color);
+    return new LinkedHashSet<>(byTitle.values());
+  }
+
   /** Repaints every arrangement of one title. Returns how many rows were written. */
   public int recolorTitle(long term, String title, String color) {
     // Rejects rather than coerces: Course.validate would quietly turn a malformed value into
@@ -255,6 +269,35 @@ public class ScheduleDb extends SQLiteOpenHelper {
     return changed;
   }
 
+  /**
+   * Gives the titles of one term a colour each, as far as the palette allows. Repairs the data that
+   * predates {@link CourseColors#pick}, where several different courses can wear the same colour.
+   *
+   * Titles are visited in {@link #courses} order and the first one keeps what it is wearing, so the
+   * earliest-scheduled course is the one that does not move; the rest re-pick around it. Run
+   * {@link #unifyColors(long)} first, or a title contributes whichever colour its first row has.
+   */
+  public int spreadColors(long term) {
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      int changed = 0;
+      Set<String> decided = new HashSet<>(), used = new HashSet<>();
+      for (Course c : courses(term)) {
+        if (!decided.add(c.title)) continue; // one decision per title, not per arrangement
+        if (used.add(c.color)) continue; // nobody else wears it, so it stays
+        String fresh = CourseColors.pick(c.title, used);
+        if (fresh.equals(c.color)) continue; // palette exhausted: the clash is unavoidable
+        used.add(fresh);
+        changed += recolorTitle(term, c.title, fresh);
+      }
+      d.setTransactionSuccessful();
+      return changed;
+    } finally {
+      d.endTransaction();
+    }
+  }
+
   public long save(Course c) {
     try {
       c.validate(term(c.semesterId).weeks, 16);
@@ -284,13 +327,20 @@ public class ScheduleDb extends SQLiteOpenHelper {
       Map<String, String> byTitle = new LinkedHashMap<>();
       for (Course e : existing)
         if (!byTitle.containsKey(e.title)) byTitle.put(e.title, e.color);
+      // Grown as titles are added, so two courses arriving in the same file cannot both take the
+      // same free colour.
+      Set<String> used = new LinkedHashSet<>(byTitle.values());
       for (Course c : courses) {
         c.id = 0;
         c.semesterId = term;
         // Validate before inheriting: it can rewrite a malformed colour, and that value must not
         // become the seed for the rest of the title group.
         c.validate(term(term).weeks, 16);
-        if (!byTitle.containsKey(c.title)) byTitle.put(c.title, CourseColors.seed(c.title));
+        if (!byTitle.containsKey(c.title)) {
+          String fresh = CourseColors.pick(c.title, used);
+          byTitle.put(c.title, fresh);
+          used.add(fresh);
+        }
         c.color = byTitle.get(c.title);
         // Course.same ignores colour, so recolouring above can neither create nor hide a duplicate.
         boolean duplicate = false;
