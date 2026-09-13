@@ -79,7 +79,7 @@
 
 **未在真机验证**：手机未连接，真机仍装着 1.2.0 之前的包。**未验证**：上午/下午/晚上三段中只有第1节那条被实际点开改过（改到 09:20 又改回 08:25），第5、9节的铃只验证了显示、没有逐个点开编辑——三条走的是同一段代码，但没有证据的地方不写成已验证。
 
-交付包已按本次改动重新 `clean` 构建并刷新（993,829 字节，SHA256 见上文交付包一行）。`tests\run-pure-java.cmd` 仍是 2120 + 14 + 30 项全通过，`python -m unittest discover -s tests` 5 项通过（本次没有改动被它们覆盖的代码）。Android Lint 本次由 19 条非阻断提示变为 **20 条**：多的一条是 `MainActivity.java` 里 `pickTime` 的 `target.setText(prefix + ...)`（`SetTextI18n`），与既有 9 条同类，属于本工程不使用字符串资源这一既有取舍，非新增错误；**错误数仍为 0**。
+交付包已按本次改动重新 `clean` 构建并刷新，字节数与 SHA256 以「交付包」那一行为准（下同）。`tests\run-pure-java.cmd` 仍是 2120 + 14 + 30 项全通过，`python -m unittest discover -s tests` 5 项通过（本次没有改动被它们覆盖的代码）。Android Lint 本次由 19 条非阻断提示变为 **20 条**：多的一条是 `MainActivity.java` 里 `pickTime` 的 `target.setText(prefix + ...)`（`SetTextI18n`），与既有 9 条同类，属于本工程不使用字符串资源这一既有取舍，非新增错误；**错误数仍为 0**。
 
 ### 改动：设置页页脚写明使用范围，仓库补 LICENSE
 
