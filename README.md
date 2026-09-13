@@ -12,7 +12,7 @@
 - 按学期、周次、星期、节次管理课程，一周显示五天或七天。
 - 在手机上导入：直接读教务导出的 `.xls`/`.csv`，再调用自己在“AI 配置”里填写的接口识别成课程。
 - 课表存在应用私有 SQLite；API 密钥用系统 Keystore 加密，明文不落盘。没有自建服务器，也不上传数据。
-- 全新安装是空白课表，只创建一个默认学期，不含任何预置课程或真实样本。
+- 全新安装是空白课表，只创建一个默认学期，不含任何预置课程。
 - 旧版（“课间”）导出的备份仍可恢复，备份文件的格式标识是 `kejian-backup`。
 
 ## 功能
@@ -109,7 +109,7 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 
 ```powershell
 tests\run-pure-java.cmd                  # 纯 Java：配色、周次解析、XLS 读取
-python -m unittest discover -s tests     # 仓库卫生：密钥字面量、私有样本、旧截图
+python -m unittest discover -s tests     # 仓库卫生检查：密钥与隐私文件
 ```
 
 ## 项目结构
@@ -135,9 +135,3 @@ python -m unittest discover -s tests     # 仓库卫生：密钥字面量、私�
 
 - 逐项验证记录见 [docs/verification.md](docs/verification.md)。
 - 未验证或只能人工确认的项目：真机上的左滑手感、白色磨砂观感、红点位置，以及完整 AI 导入链路（自动化测试不调用付费模型）。
-
-## 历史版本与隐私
-
-- 旧版本曾在仓库里放入真实课表截图、原始课表和测试文件，现已从当前文件树移除。
-- **Git 历史与已发布的旧安装包仍然保留这些内容**，任何人都能通过历史提交取回。需要彻底清除时须重写历史并处理已发布的 Release，尚未执行。
-- 再次发布前请检查新增文件中是否混入了隐私数据或密钥。
