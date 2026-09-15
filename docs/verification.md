@@ -1,5 +1,36 @@
 # 验证记录
 
+## 当前版本：1.2.5（2026-09-15）
+
+当前源码在 `main`，包名 `com.kejian.app`，versionCode 10。下面的 1.2.0/早期记录保留作为历史，不代表当前功能或当前测试入口。
+
+本轮已验证：
+
+- 纯 Java：2445 项配色断言、14 项课表规则、30 项 XLS 读取、7 项 CSV 限制检查通过。
+- Python：13 项仓库卫生与 XML 契约检查通过。
+- `GradientRegressionTest` 在独立包 `com.kejian.gradientqa` 中通过：渐变绘制顺序一致、重复绘制稳定、改色/尺寸变化更新缓存；今日使用原始纯色，其他列保留渐变，关闭高亮恢复渐变。
+- 内存 SQLite 验证：旧 JSON 默认保护、颜色标记复制、预览零写入、确认保存、过期方案拒绝、同名导入保留手选色、非法方案不写入。
+- 模拟器弹窗实际操作：保护项默认不勾选、预览取消不改色、确认仅更新所选课程。检查了虚构课程的预览截图。
+- `assembleDebug` / `lintDebug` 成功，仍有非阻断警告，不代表零警告或全机型无缺陷。
+- 去除卡片左侧装饰竖条后重新构建成功。测试未调用付费 AI，未改写用户课表数据库。
+
+当前复测入口（需已启动模拟器并配置 JDK、adb）：
+
+```powershell
+.\tests\run-pure-java.cmd
+python -m unittest discover -s tests -p "test_*.py"
+.\gradlew.bat -I tests/gradient.init.gradle installDebug installDebugAndroidTest
+adb shell am instrument -w com.kejian.gradientqa.test/com.kejian.app.GradientRegressionTest
+# 隔离测试后重新生成正常包，切勿发布 QA 包
+.\gradlew.bat assembleDebug lintDebug
+```
+
+以插桩输出的 PASS/FAIL 判断结果，不能仅看 adb 退出码。其他 XML 与 AI/导入回归入口分别见 [XML 对照说明](xml-layout-migration.md) 和 [测试说明](../tests/REVIEW-TESTS.md)。
+
+未覆盖：全部真机、超大字体/横屏组合，以及真实服务商的完整付费 AI 导入链路。旧文中“白色磨砂”“同色系优先分配”和“不再有插桩测试”等说法仅描述当时版本，已被当前实现替代。
+
+## 历史记录
+
 ## 1.2.0 课表交互改进
 
 本次改动：卡片左滑删除、删除学期、同名课程同色、30色色板与取色器、今日白色磨砂、待补充红点、周次点格子，以及作息默认值换成真实钟点并新增预备铃（见下文各节）。数据库结构和备份格式未变，旧备份仍可恢复。
