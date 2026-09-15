@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Scoped styles: the application theme and other Java-built pages are unchanged. -->
+    <style name="PageText" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/page_ink</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:fontFeatureSettings">kern</item>
+    </style>
+    <style name="PageLabel" parent="PageText">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/page_muted</item>
+    </style>
+    <style name="PageCaption" parent="PageText">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/page_muted</item>
+    </style>
+    <style name="PageSection" parent="PageCaption">
+        <item name="android:textStyle">bold</item>
+        <item name="android:layout_marginTop">20dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+    </style>
+    <style name="PageField" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/field_height</item>
+        <item name="android:layout_marginTop">@dimen/label_spacing</item>
+        <item name="android:layout_marginBottom">@dimen/field_spacing</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/page_ink</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:background">@drawable/page_field</item>
+        <item name="android:padding">@dimen/field_padding</item>
+    </style>
+    <style name="PageSpinner" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/field_height</item>
+        <item name="android:layout_marginTop">@dimen/label_spacing</item>
+        <item name="android:layout_marginBottom">@dimen/field_spacing</item>
+        <item name="android:background">@drawable/page_field</item>
+    </style>
+    <style name="PageButton" parent="PageText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/page_primary</item>
+        <item name="android:gravity">center</item>
+        <item name="android:minHeight">50dp</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:background">@drawable/page_button_secondary</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+    <style name="PagePrimaryButton" parent="PageButton">
+        <item name="android:textColor">@color/page_white</item>
+        <item name="android:background">@drawable/page_button_primary</item>
+    </style>
+    <style name="PageLink" parent="PageText">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/page_primary</item>
+        <item name="android:gravity">center</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+</resources>

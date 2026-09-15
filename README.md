@@ -123,6 +123,8 @@ python -m unittest discover -s tests     # 仓库卫生检查：密钥与隐私�
 
 ## 项目结构
 
+设置、AI 配置和课程编辑弹窗现采用 XML 布局 + Java 逻辑。学习入口见 [XML 与 Java 对照说明](docs/xml-layout-migration.md)。其他页面与课表自定义绘制暂保留原写法。
+
 | 文件 | 作用 |
 |---|---|
 | `app/src/main/java/com/kejian/app/MainActivity.java` | 四个主页面、详情、学期、作息与设置页面的组织 |

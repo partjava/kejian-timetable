@@ -1,0 +1,67 @@
+# XML 布局与 Java 代码对照
+
+本阶段将三个页面的固定控件迁移到 XML，保留原生 Android + Java。数据库、AI 请求和课表自定义绘制不因迁移而重写。
+
+## 在 Android Studio 中查看
+
+在左侧 Android 视图展开 `app → res → layout`，打开文件后使用 Code / Split / Design 查看。XML 中能看到输入框、按钮、间距和固定结构，不再只有空容器。
+
+| XML | 对应 Java | 用途 |
+|---|---|---|
+| `page_settings.xml` | `MainActivity.showSettings()` | 设置页的分组与设置项 |
+| `item_setting.xml` | MainActivity 设置绑定方法 | 多个设置项共用的卡片结构 |
+| `item_setting_toggle.xml` | MainActivity 开关绑定方法 | 周末显示、今天高亮开关 |
+| `page_ai_settings.xml` | `ImportController.settings()` | API 地址、模型、密钥与操作按钮 |
+| `dialog_course_editor.xml` | `CourseEditor.build()` | 添加和编辑课程弹窗 |
+
+文件均位于 `app/src/main/res/layout/`。样式资源在 `res/values/layout_styles.xml`，文字、颜色、尺寸分别在同目录的 `layout_strings.xml`、`layout_colors.xml`、`layout_dimens.xml`；背景在 `res/drawable/page_*.xml`。
+
+## 一次点击如何工作
+
+以 AI 测试按钮为例：XML 定义 `@+id/ai_test` 的文字与样式，Java 使用 `findViewById(R.id.ai_test)` 找到它并设置点击监听。点击后仍运行原来的 `test(...)`，网络结果由原来的请求状态检查后显示到 `ai_status`。
+
+资源文件不一定必须叫 strings.xml 或 colors.xml；Android 会合并 `res/values` 中所有资源 XML。这里采用 layout_ 前缀，使这一阶段的资源容易识别，也避免影响未迁移页面。
+
+`<include layout="@layout/item_setting" ... />` 是复用布局。各设置项的外层 id 不同，Java 应先找到对应外层，再找内部标题和说明；不能直接从整页查找重复的内部 id。
+
+## 为什么仍有 Java 界面代码
+
+- 课表网格仍由 `TimetableView` 自定义绘制，本阶段不拆。
+- 周次格子数量取决于学期周数、色块取决于色板；XML 定义它们的容器，Java 动态填充与更新选择状态。
+- 共享页面标题和其他未迁移页面仍沿用原有写法。不要认为本阶段已经将整个应用全部改成 XML。
+- XML 预览不执行数据库读取和 Java 数据绑定，所以动态文本、周次与颜色不一定显示完整，实际运行结果以应用为准。
+
+## 回归测试
+
+`tests/test_xml_layouts.py` 检查真实控件、唯一 id 和密钥输入属性。`XmlLayoutRegressionTest` 在隔离包中测试设置开关与导航、AI 配置保存、课程回填/保存/关闭/非法输入与数据库写入。
+
+测试命令（配置好 JAVA_HOME 和 adb）：
+
+```powershell
+python -m unittest discover -s tests
+.\tests\run-pure-java.cmd
+.\gradlew.bat -I tests/xml-reviewfix.init.gradle :app:assembleDebug :app:assembleDebugAndroidTest
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5554 shell am instrument -w -e phase after com.kejian.reviewfix20260913.test/com.kejian.app.XmlLayoutRegressionTest
+```
+
+还应按 `tests/REVIEW-TESTS.md` 复跑原有 AI/导入回归。以 instrumentation 输出的 FAIL 数量判定结果，而非仅看 adb 退出码。
+
+完成隔离测试后，不带 init 脚本重新构建：`.\gradlew.bat :app:assembleDebug :app:lintDebug`。检查包名是 `com.kejian.app`，再另存安装包，避免误发 QA 包。不要将测试截图、用户课表或密钥提交到仓库。
+
+## 回退与数据
+
+旧版本基准是 `ba9195f`（v1.2.1），拆分工作在 `refactor/xml-layouts` 分支。旧 main 与旧 APK 保留。若当前有未提交改动，先保存它们再切换分支；不要用强制重置丢弃修改。
+
+APK 是否可覆盖安装取决于包名和签名一致；不要为测试卸载原应用。安装前先在设置中备份课表。本阶段不自动推送 GitHub或发布 Release。
+
+## 本阶段验收记录
+
+- 3 个页面、5 个布局文件已迁移；颜色、文字、尺寸、背景提取为独立 XML 资源。
+- 8 项隔离界面测试通过，包含视图状态恢复时两个开关互不影响；该用例修复前失败、修复后通过。复用开关禁用视图状态保存，以 SharedPreferences 为唯一来源。
+- 原有 10 项 AI/导入回归通过；2171 项纯 Java 检查与 10 项 Python 检查通过。
+- 对比设置页、AI 页、编辑弹窗上下部截图；修正返回导入按钮的居中偏移。
+- 构建成功。Lint 0 错误、41 警告（包含复用 include id、输入类型/自动填充/标签、旧 API 等，不等于零警告）。
+- 安装包仍为 com.kejian.app、versionCode 6、versionName 1.2.1，原 debug 签名；这是 XML 拆分测试包，未声明为新正式版本。
+- 没有调用付费 AI、修改用户数据库或覆盖旧 APK。未逐一验证全部真机型号、软键盘/横屏组合；模拟器通过不代表所有场景零缺陷。

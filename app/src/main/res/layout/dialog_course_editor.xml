@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingLeft="22dp"
+    android:paddingRight="22dp"
+    android:paddingTop="18dp"
+    android:paddingBottom="18dp">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/course_editor_title"
+            style="@style/PageText"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:text="@string/course_add_title" />
+        <TextView
+            android:id="@+id/course_close"
+            style="@style/PageLink"
+            android:text="@string/course_close_label" />
+    </LinearLayout>
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="12dp"
+        android:fillViewport="false">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp">
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_name_label" />
+            <EditText
+                android:id="@+id/course_name"
+                style="@style/PageField"
+                android:hint="@string/course_name_hint" />
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_teacher_label" />
+            <EditText
+                android:id="@+id/course_teacher"
+                style="@style/PageField" />
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_room_label" />
+            <EditText
+                android:id="@+id/course_room"
+                style="@style/PageField" />
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_day_label" />
+            <Spinner
+                android:id="@+id/course_day"
+                style="@style/PageSpinner" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        style="@style/PageLabel"
+                        android:text="@string/course_start_label" />
+                    <Spinner
+                        android:id="@+id/course_start"
+                        style="@style/PageSpinner" />
+                </LinearLayout>
+                <Space
+                    android:layout_width="12dp"
+                    android:layout_height="1dp" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        style="@style/PageLabel"
+                        android:text="@string/course_end_label" />
+                    <Spinner
+                        android:id="@+id/course_end"
+                        style="@style/PageSpinner" />
+                </LinearLayout>
+            </LinearLayout>
+            <TextView
+                style="@style/PageCaption"
+                android:text="@string/course_period_help" />
+            <TextView
+                style="@style/PageLabel"
+                android:layout_marginTop="12dp"
+                android:text="@string/course_weeks_label" />
+            <!-- Variable term weeks and palette entries are generated into these containers. -->
+            <LinearLayout
+                android:id="@+id/course_week_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:id="@+id/course_week_all"
+                    style="@style/PageLink"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/course_week_all_label" />
+                <TextView
+                    android:id="@+id/course_week_odd"
+                    style="@style/PageLink"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/course_week_odd_label" />
+                <TextView
+                    android:id="@+id/course_week_even"
+                    style="@style/PageLink"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/course_week_even_label" />
+            </LinearLayout>
+            <TextView
+                style="@style/PageLabel"
+                android:layout_marginTop="10dp"
+                android:text="@string/course_weeks_direct" />
+            <EditText
+                android:id="@+id/course_weeks"
+                style="@style/PageField"
+                android:hint="@string/course_weeks_hint" />
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_notes_label" />
+            <EditText
+                android:id="@+id/course_notes"
+                style="@style/PageField"
+                android:singleLine="false"
+                android:minLines="2" />
+            <TextView
+                style="@style/PageLabel"
+                android:text="@string/course_color_label" />
+            <LinearLayout
+                android:id="@+id/course_color_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:id="@+id/course_current_color"
+                    style="@style/PageText"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:contentDescription="@string/course_color_current_label" />
+                <Space
+                    android:layout_width="10dp"
+                    android:layout_height="1dp" />
+                <TextView
+                    android:id="@+id/course_custom_color"
+                    style="@style/PageButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="@string/course_color_custom_label"
+                    android:contentDescription="@string/course_color_custom_label" />
+            </LinearLayout>
+            <TextView
+                style="@style/PageCaption"
+                android:layout_marginTop="8dp"
+                android:text="@string/course_color_help" />
+        </LinearLayout>
+    </ScrollView>
+    <TextView
+        android:id="@+id/course_save"
+        style="@style/PagePrimaryButton"
+        android:layout_marginTop="12dp"
+        android:text="@string/course_save_label"
+        android:contentDescription="@string/course_save_label" />
+</LinearLayout>

@@ -38,49 +38,31 @@ public final class CourseEditor {
 
   private static View build(
       MainActivity a, Course c, boolean fresh, Dialog dialog, Saved callback) {
-    LinearLayout root = Ui.col(a);
-    Ui.pad(root, 22, 18);
-    LinearLayout top = Ui.row(a);
-    top.addView(
-        Ui.text(a, fresh ? "添加课程" : "编辑课程", 22, Ui.INK, true),
-        new LinearLayout.LayoutParams(0, -2, 1));
-    top.addView(Ui.link(a, "关闭", dialog::dismiss));
-    root.addView(top);
-    Ui.gap(root, 12);
-    ScrollView scroll = new ScrollView(a);
-    scroll.setFillViewport(false);
-    root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-    LinearLayout body = Ui.col(a);
-    scroll.addView(body);
-    Ui.gap(body, 8);
-    EditText name = Ui.input(a, "课程名称 *", c.title, body);
-    name.setHint("例如：移动应用开发");
-    EditText teacher = Ui.input(a, "任课教师", c.teacher, body);
-    EditText room = Ui.input(a, "上课地点", c.room, body);
-    Spinner day = Ui.select(a, "星期", Course.DAYS, c.day - 1, body);
-    LinearLayout period = Ui.row(a);
-    LinearLayout left = Ui.col(a), right = Ui.col(a);
-    period.addView(left, new LinearLayout.LayoutParams(0, -2, 1));
-    View spacer = new View(a);
-    period.addView(spacer, new LinearLayout.LayoutParams(Ui.dp(a, 12), 1));
-    period.addView(right, new LinearLayout.LayoutParams(0, -2, 1));
-    body.addView(period);
+    View root = a.getLayoutInflater().inflate(R.layout.dialog_course_editor, null);
+    ((TextView) root.findViewById(R.id.course_editor_title))
+        .setText(fresh ? R.string.course_add_title : R.string.course_edit_title);
+    root.findViewById(R.id.course_close).setOnClickListener(v -> dialog.dismiss());
+    EditText name = root.findViewById(R.id.course_name);
+    EditText teacher = root.findViewById(R.id.course_teacher);
+    EditText room = root.findViewById(R.id.course_room);
+    EditText notes = root.findViewById(R.id.course_notes);
+    name.setText(c.title);
+    teacher.setText(c.teacher);
+    room.setText(c.room);
+    notes.setText(c.notes);
+    Spinner day = root.findViewById(R.id.course_day);
+    Spinner start = root.findViewById(R.id.course_start);
+    Spinner end = root.findViewById(R.id.course_end);
+    bindSpinner(a, day, Course.DAYS, c.day - 1);
     String[] ps = new String[16];
     for (int i = 0; i < ps.length; i++) ps[i] = "第 " + (i + 1) + " 节";
-    Spinner start = Ui.select(a, "开始节次", ps, c.start - 1, left),
-        end = Ui.select(a, "结束节次", ps, c.end - 1, right);
-    body.addView(Ui.text(a, "可选择1–16节；超出现有节数时，保存后自动扩展课表。", 12, Ui.MUTED, false));
-    Ui.gap(body, 12);
-    EditText weeks = weekPicker(a, c, body);
-    EditText notes = Ui.input(a, "备注（选填）", c.notes, body);
-    notes.setSingleLine(false);
-    notes.setMinLines(2);
+    bindSpinner(a, start, ps, c.start - 1);
+    bindSpinner(a, end, ps, c.end - 1);
+    EditText weeks = weekPicker(a, c, root);
     final String[] chosen = {c.color};
     final boolean[] colorPicked = {false};
-    body.addView(Ui.text(a, "课程颜色", 13, Ui.MUTED, false));
-    Ui.gap(body, 12);
     final List<TextView> swatches = new ArrayList<>();
-    LinearLayout grid = Ui.col(a);
+    LinearLayout grid = root.findViewById(R.id.course_color_grid);
     for (int row = 0; row * 6 < CourseColors.PALETTE.length; row++) {
       LinearLayout line = Ui.row(a);
       for (int k = 0; k < 6; k++) {
@@ -106,59 +88,42 @@ public final class CourseEditor {
       }
       grid.addView(line);
     }
-    body.addView(grid);
-    Ui.gap(body, 10);
-    TextView current = Ui.text(a, "", 18, Ui.INK, true);
-    current.setGravity(Gravity.CENTER);
-    current.setContentDescription("当前颜色");
-    LinearLayout custom = Ui.row(a);
-    custom.addView(current, new LinearLayout.LayoutParams(Ui.dp(a, 48), Ui.dp(a, 48)));
-    custom.addView(new View(a), new LinearLayout.LayoutParams(Ui.dp(a, 10), 1));
-    custom.addView(
-        Ui.button(
+    TextView current = root.findViewById(R.id.course_current_color);
+    root.findViewById(R.id.course_custom_color).setOnClickListener(
+        v -> ColorPicker.open(
             a,
-            "自定义颜色…",
-            false,
-            () ->
-                ColorPicker.open(
-                    a,
-                    chosen[0],
-                    hex -> {
-                      chosen[0] = hex;
-                      colorPicked[0] = true;
-                      paintSwatches(a, swatches, chosen[0], null);
-                    })),
-        new LinearLayout.LayoutParams(0, Ui.dp(a, 48), 1));
-    body.addView(custom);
-    Ui.gap(body, 8);
-    body.addView(Ui.text(a, "同名课程共用一种颜色，改色会一起应用。", 12, Ui.MUTED, false));
-    paintSwatches(a, swatches, chosen[0], current);
-    Ui.gap(body, 24);
-    Ui.gap(root, 12);
-    root.addView(
-        Ui.button(
-            a,
-            "保存课程",
-            true,
-            () -> {
-              try {
-                c.title = name.getText().toString().trim();
-                c.teacher = teacher.getText().toString().trim();
-                c.room = room.getText().toString().trim();
-                c.day = day.getSelectedItemPosition() + 1;
-                c.start = start.getSelectedItemPosition() + 1;
-                c.end = end.getSelectedItemPosition() + 1;
-                c.weeks = ScheduleRules.parseWeeks(weeks.getText().toString(), a.term().weeks);
-                c.notes = notes.getText().toString().trim();
-                c.color = chosen[0];
-                c.validate(a.term().weeks, 16);
-                callback.accept(c, colorPicked[0]);
-                dialog.dismiss();
-              } catch (Exception e) {
-                Ui.error(a, e);
-              }
+            chosen[0],
+            hex -> {
+              chosen[0] = hex;
+              colorPicked[0] = true;
+              paintSwatches(a, swatches, chosen[0], null);
             }));
+    paintSwatches(a, swatches, chosen[0], current);
+    root.findViewById(R.id.course_save).setOnClickListener(
+        v -> {
+          try {
+            c.title = name.getText().toString().trim();
+            c.teacher = teacher.getText().toString().trim();
+            c.room = room.getText().toString().trim();
+            c.day = day.getSelectedItemPosition() + 1;
+            c.start = start.getSelectedItemPosition() + 1;
+            c.end = end.getSelectedItemPosition() + 1;
+            c.weeks = ScheduleRules.parseWeeks(weeks.getText().toString(), a.term().weeks);
+            c.notes = notes.getText().toString().trim();
+            c.color = chosen[0];
+            c.validate(a.term().weeks, 16);
+            callback.accept(c, colorPicked[0]);
+            dialog.dismiss();
+          } catch (Exception e) {
+            Ui.error(a, e);
+          }
+        });
     return root;
+  }
+
+  private static void bindSpinner(MainActivity a, Spinner spinner, String[] items, int index) {
+    spinner.setAdapter(new ArrayAdapter<>(a, android.R.layout.simple_spinner_dropdown_item, items));
+    spinner.setSelection(Math.max(0, Math.min(items.length - 1, index)));
   }
 
   /**
@@ -169,20 +134,14 @@ public final class CourseEditor {
    * untouched. Typing wins while the field has focus and the chips catch up when it loses focus —
    * syncing on each keystroke would fight half-typed input like "1-".
    */
-  private static EditText weekPicker(MainActivity a, Course c, LinearLayout body) {
+  private static EditText weekPicker(MainActivity a, Course c, View root) {
     final int total = a.term().weeks;
     final Set<Integer> picked = new TreeSet<>(c.weeks);
     final List<TextView> chips = new ArrayList<>();
     final int[] anchor = {0};
 
-    final EditText field = new EditText(a);
-    field.setTextSize(15);
-    field.setTextColor(Ui.INK);
-    field.setSingleLine(true);
+    final EditText field = root.findViewById(R.id.course_weeks);
     field.setText(ScheduleRules.formatWeeks(new ArrayList<>(picked)));
-    field.setHint("例如：1-3,5-17");
-    field.setBackground(Ui.border(a, Ui.BG, 12));
-    Ui.pad(field, 12, 12);
 
     final Runnable showPicked = () -> field.setText(ScheduleRules.formatWeeks(new ArrayList<>(picked)));
     final Runnable repaint =
@@ -190,10 +149,7 @@ public final class CourseEditor {
           for (int i = 0; i < chips.size(); i++) paintChip(a, chips.get(i), picked.contains(i + 1));
         };
 
-    body.addView(Ui.text(a, "上课周次 *", 13, Ui.MUTED, false));
-    Ui.gap(body, 7);
-    LinearLayout grid = Ui.col(a);
-    body.addView(grid);
+    LinearLayout grid = root.findViewById(R.id.course_week_grid);
     for (int row = 0; row * 7 < total; row++) {
       LinearLayout line = Ui.row(a);
       for (int k = 0; k < 7; k++) {
@@ -232,28 +188,18 @@ public final class CourseEditor {
       grid.addView(line);
     }
     repaint.run();
-    Ui.gap(body, 6);
-    LinearLayout quick = Ui.row(a);
-    for (String mode : new String[] {"全部周", "单周", "双周"}) {
-      quick.addView(
-          Ui.link(
-              a,
-              mode,
-              () -> {
-                picked.clear();
-                for (int i = 1; i <= total; i++)
-                  if (mode.equals("全部周") || (mode.equals("单周") ? i % 2 == 1 : i % 2 == 0))
-                    picked.add(i);
-                repaint.run();
-                showPicked.run();
-              }),
-          new LinearLayout.LayoutParams(0, -2, 1));
+    int[] quickIds = {R.id.course_week_all, R.id.course_week_odd, R.id.course_week_even};
+    for (int index = 0; index < quickIds.length; index++) {
+      final int mode = index;
+      root.findViewById(quickIds[index]).setOnClickListener(
+          v -> {
+            picked.clear();
+            for (int i = 1; i <= total; i++)
+              if (mode == 0 || (mode == 1 ? i % 2 == 1 : i % 2 == 0)) picked.add(i);
+            repaint.run();
+            showPicked.run();
+          });
     }
-    body.addView(quick);
-    Ui.gap(body, 10);
-    body.addView(Ui.text(a, "或直接填写", 13, Ui.MUTED, false));
-    Ui.gap(body, 7);
-    body.addView(field, new LinearLayout.LayoutParams(-1, Ui.dp(a, 48)));
     field.setOnFocusChangeListener(
         (v, hasFocus) -> {
           if (hasFocus) return;
@@ -265,7 +211,6 @@ public final class CourseEditor {
           }
           repaint.run();
         });
-    Ui.gap(body, 16);
     return field;
   }
 

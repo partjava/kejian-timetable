@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="field_height">48dp</dimen>
+    <dimen name="field_radius">12dp</dimen>
+    <dimen name="field_padding">12dp</dimen>
+    <dimen name="field_spacing">16dp</dimen>
+    <dimen name="label_spacing">7dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_radius">18dp</dimen>
+    <dimen name="card_spacing">8dp</dimen>
+</resources>

@@ -747,20 +747,8 @@ public class MainActivity extends Activity {
     body.addView(line, new LinearLayout.LayoutParams(-1, Ui.dp(this, 1)));
   }
 
-  private void section(LinearLayout body, String title) {
-    Ui.gap(body, 20);
-    body.addView(Ui.text(this, title, 12, Ui.MUTED, true));
-    Ui.gap(body, 10);
-  }
-
-  private void setting(LinearLayout body, String title, String detail, Runnable click) {
-    body.addView(linkCard(title, detail, click));
-    Ui.gap(body, 8);
-  }
-
   /**
-   * A tappable card with a chevron. Shared by the settings screen and the pending list, which is
-   * why it is not named after either.
+   * A tappable card with a chevron for the dynamically generated pending list.
    */
   private LinearLayout linkCard(String title, String detail, Runnable click) {
     LinearLayout row = Ui.card(this);
@@ -778,67 +766,58 @@ public class MainActivity extends Activity {
     return row;
   }
 
-  private void toggle(LinearLayout body, String title, String detail, String key, boolean initial) {
-    LinearLayout box = Ui.card(this);
-    LinearLayout row = Ui.row(this);
-    LinearLayout label = Ui.col(this);
-    label.addView(Ui.text(this, title, 15, Ui.INK, true));
-    Ui.gap(label, 6);
-    TextView d = Ui.text(this, detail, 12, Ui.MUTED, false);
-    label.addView(d);
-    row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-    Switch s = new Switch(this);
-    s.setContentDescription(title);
-    s.setChecked(prefs.getBoolean(key, initial));
-    s.setOnCheckedChangeListener((b, v) -> prefs.edit().putBoolean(key, v).apply());
-    row.addView(s);
-    box.addView(row);
-    body.addView(box);
-    Ui.gap(body, 8);
-  }
-
   private void showSettings() {
     LinearLayout root = screen("设置", "让课表，适合你的节奏");
-    LinearLayout body = content(root);
-    section(body, "学期与时间");
-    setting(body, "学期管理", term().name, this::showTerms);
-    setting(body, "作息时间", "每天 " + periods() + " 节 · 支持晚间课程", this::showTimes);
-    section(body, "显示偏好");
-    toggle(body, "显示周末", "关闭仅隐藏周六、周日，课程仍会保留", "weekends", true);
-    toggle(body, "突出显示今天", "在课表日期栏标记今天", "highlight", true);
-    section(body, "智能导入");
-    setting(body, "导入课表文件", "Excel / CSV · AI 识别后确认", () -> importer.open());
-    setting(body, "AI 配置", "接口地址、模型与密钥", () -> importer.settings());
+    View settings = getLayoutInflater().inflate(R.layout.page_settings, root, false);
+    root.addView(settings);
+    bindSetting(settings, R.id.settings_terms, R.string.settings_terms, term().name, this::showTerms);
+    bindSetting(settings, R.id.settings_times, R.string.settings_times,
+        getString(R.string.settings_times_detail, periods()), this::showTimes);
+    bindSettingToggle(settings, R.id.settings_weekends, R.string.settings_weekends,
+        R.string.settings_weekends_detail, "weekends", true);
+    bindSettingToggle(settings, R.id.settings_highlight, R.string.settings_highlight,
+        R.string.settings_highlight_detail, "highlight", true);
+    bindSetting(settings, R.id.settings_import, R.string.settings_import,
+        getString(R.string.settings_import_detail), () -> importer.open());
+    bindSetting(settings, R.id.settings_ai, R.string.settings_ai,
+        getString(R.string.settings_ai_detail), () -> importer.settings());
     try {
       int count = db.pending(termId).length();
-      setting(
-          body,
-          "待补充事项",
-          count == 0 ? "当前没有待补充课程" : count + " 项课程需要确认上课时间",
-          this::showSamplePending);
+      bindSetting(settings, R.id.settings_pending, R.string.settings_pending,
+          count == 0 ? getString(R.string.settings_pending_empty)
+              : getString(R.string.settings_pending_count, count), this::showSamplePending);
     } catch (JSONException e) {
+      settings.findViewById(R.id.settings_pending).setVisibility(View.GONE);
       Ui.error(this, e);
     }
-    section(body, "数据管理");
-    // Auditable and re-runnable: the one-shot repair in onCreate rewrites colours the user is
-    // looking at, so the count it reported has to stay visible after the fact.
-    setting(
-        body,
-        "统一同名课程颜色",
-        "已处理 " + prefs.getInt("colorsUnifiedCount", 0) + " 项 · 点击重新检查",
-        this::runUnify);
-    setting(body, "重排课程颜色", "让不同的课各用一种颜色 · 会改写当前学期配色", this::confirmSpread);
-    setting(body, "备份课表", "导出所有学期为本地 JSON 文件", this::backup);
-    setting(body, "恢复课表", "作为新学期恢复，保留已有数据", this::restore);
-    Ui.gap(body, 20);
-    // The only place the app states its terms. Kept short: it is a personal project, and the
-    // licence file in the repository carries the detail.
-    TextView footer =
-        Ui.text(this, "个人课表 1.2.1\n私人使用，切勿商用 · 保留所有权利", 12, Ui.MUTED, false);
-    footer.setGravity(Gravity.CENTER);
-    footer.setLineSpacing(Ui.dp(this, 6), 1);
-    body.addView(footer);
-    Ui.gap(body, 20);
+    // Keep the one-shot colour repair count visible and its existing rerun action.
+    bindSetting(settings, R.id.settings_unify, R.string.settings_unify,
+        getString(R.string.settings_unify_detail, prefs.getInt("colorsUnifiedCount", 0)), this::runUnify);
+    bindSetting(settings, R.id.settings_spread, R.string.settings_spread,
+        getString(R.string.settings_spread_detail), this::confirmSpread);
+    bindSetting(settings, R.id.settings_backup, R.string.settings_backup,
+        getString(R.string.settings_backup_detail), this::backup);
+    bindSetting(settings, R.id.settings_restore, R.string.settings_restore,
+        getString(R.string.settings_restore_detail), this::restore);
+  }
+
+  /** Included rows reuse child ids, so always bind labels within the selected row. */
+  private void bindSetting(View page, int rowId, int title, String detail, Runnable action) {
+    View row = page.findViewById(rowId);
+    ((TextView) row.findViewById(R.id.setting_title)).setText(title);
+    ((TextView) row.findViewById(R.id.setting_detail)).setText(detail);
+    row.setOnClickListener(v -> action.run());
+  }
+
+  private void bindSettingToggle(
+      View page, int rowId, int title, int detail, String key, boolean initial) {
+    View row = page.findViewById(rowId);
+    ((TextView) row.findViewById(R.id.setting_title)).setText(title);
+    ((TextView) row.findViewById(R.id.setting_detail)).setText(detail);
+    Switch control = row.findViewById(R.id.setting_switch);
+    control.setContentDescription(getString(title));
+    control.setChecked(prefs.getBoolean(key, initial));
+    control.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(key, checked).apply());
   }
 
   private void showSamplePending() {

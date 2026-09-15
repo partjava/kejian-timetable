@@ -6,7 +6,6 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.provider.OpenableColumns;
-import android.text.InputType;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.*;
@@ -232,14 +231,18 @@ public class ImportController {
 
   public void settings() {
     LinearLayout root = a.subScreen("AI 配置", "密钥经系统加密保存在本机，不写入安装包与课表备份");
-    LinearLayout b = body(root);
-    EditText endpoint = Ui.input(a, "API 地址", AiConfig.url(a), b);
-    endpoint.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-    EditText model = Ui.input(a, "模型名称", AiConfig.model(a), b);
-    EditText key = Ui.input(a, "API 密钥", "", b);
-    key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-    key.setHint(AiConfig.hasKey(a) ? "已保存，留空则不修改" : "粘贴你的 API 密钥");
-    TextView status = Ui.text(a, "不确定模型名称时，可先点「获取模型列表」", 14, Ui.MUTED, false);
+    invalidateConfig();
+    View page = a.getLayoutInflater().inflate(R.layout.page_ai_settings, root, false);
+    root.addView(page);
+    EditText endpoint = page.findViewById(R.id.ai_endpoint);
+    EditText model = page.findViewById(R.id.ai_model);
+    EditText key = page.findViewById(R.id.ai_key);
+    // Populate first: installing the watcher earlier would invalidate the initial configuration.
+    endpoint.setText(AiConfig.url(a));
+    model.setText(AiConfig.model(a));
+    key.setText("");
+    key.setHint(AiConfig.hasKey(a) ? R.string.ai_key_saved : R.string.ai_key_empty);
+    TextView status = page.findViewById(R.id.ai_status);
     TextWatcher watcher = new TextWatcher() {
       public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
       public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -251,30 +254,10 @@ public class ImportController {
     endpoint.addTextChangedListener(watcher);
     model.addTextChangedListener(watcher);
     key.addTextChangedListener(watcher);
-    key.setSaveEnabled(false);
-    b.addView(status);
-    Ui.gap(b, 18);
-    b.addView(Ui.button(a, "获取模型列表", false, () -> listModels(endpoint, key, model, status)));
-    Ui.gap(b, 12);
-    b.addView(Ui.button(a, "测试连接", false, () -> test(endpoint, model, key, status)));
-    Ui.gap(b, 12);
-    b.addView(Ui.button(a, "保存配置", true, () -> save(endpoint, model, key, status)));
-    Ui.gap(b, 22);
-    b.addView(
-        Ui.text(
-            a,
-            "地址填聊天补全接口的完整地址，例如：\n"
-                + "DeepSeek：https://api.deepseek.com/chat/completions\n"
-                + "OpenAI：https://api.openai.com/v1/chat/completions\n"
-                + "Azure OpenAI 可带 ?api-version= 查询参数。\n\n"
-                + "模型名例如 deepseek-chat、gpt-4o-mini；填不准就点「获取模型列表」让它列出来。\n"
-                + "密钥只存在本机，经系统 Keystore 加密，不会进入安装包，也不会随课表备份迁走。\n"
-                + "换机或改锁屏密码后需要重新填写。",
-            13,
-            Ui.MUTED,
-            false));
-    Ui.gap(b, 16);
-    b.addView(Ui.link(a, "返回导入", this::open));
+    page.findViewById(R.id.ai_models).setOnClickListener(v -> listModels(endpoint, key, model, status));
+    page.findViewById(R.id.ai_test).setOnClickListener(v -> test(endpoint, model, key, status));
+    page.findViewById(R.id.ai_save).setOnClickListener(v -> save(endpoint, model, key, status));
+    page.findViewById(R.id.ai_return).setOnClickListener(v -> open());
   }
 
   private void test(EditText endpoint, EditText model, EditText key, TextView status) {

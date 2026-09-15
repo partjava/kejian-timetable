@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="22dp"
+        android:paddingRight="22dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp">
+        <TextView
+            style="@style/PageLabel"
+            android:text="@string/ai_endpoint_label" />
+        <EditText
+            android:id="@+id/ai_endpoint"
+            style="@style/PageField"
+            android:inputType="textUri" />
+        <TextView
+            style="@style/PageLabel"
+            android:text="@string/ai_model_label" />
+        <EditText
+            android:id="@+id/ai_model"
+            style="@style/PageField" />
+        <!-- Never let Android view-state saving retain a typed API secret. -->
+        <TextView
+            style="@style/PageLabel"
+            android:text="@string/ai_key_label" />
+        <EditText
+            android:id="@+id/ai_key"
+            style="@style/PageField"
+            android:inputType="textPassword"
+            android:saveEnabled="false" />
+        <TextView
+            android:id="@+id/ai_status"
+            style="@style/PageText"
+            android:text="@string/ai_status_initial"
+            android:textSize="14sp"
+            android:textColor="@color/page_muted" />
+        <TextView
+            android:id="@+id/ai_models"
+            style="@style/PageButton"
+            android:layout_marginTop="18dp"
+            android:text="@string/ai_models_label"
+            android:contentDescription="@string/ai_models_label" />
+        <TextView
+            android:id="@+id/ai_test"
+            style="@style/PageButton"
+            android:layout_marginTop="12dp"
+            android:text="@string/ai_test_label"
+            android:contentDescription="@string/ai_test_label" />
+        <TextView
+            android:id="@+id/ai_save"
+            style="@style/PagePrimaryButton"
+            android:layout_marginTop="12dp"
+            android:text="@string/ai_save_label"
+            android:contentDescription="@string/ai_save_label" />
+        <TextView
+            style="@style/PageLabel"
+            android:layout_marginTop="22dp"
+            android:text="@string/ai_help" />
+        <TextView
+            android:id="@+id/ai_return"
+            style="@style/PageLink"
+            android:layout_width="match_parent"
+            android:layout_marginTop="16dp"
+            android:text="@string/ai_return_label" />
+    </LinearLayout>
+</ScrollView>
