@@ -228,6 +228,43 @@ public class ScheduleDb extends SQLiteOpenHelper {
     return new LinkedHashSet<>(byTitle.values());
   }
 
+  public boolean isColorManual(long term, String title) {
+    for (Course c : courses(term)) if (title.equals(c.title) && c.colorManual) return true;
+    return false;
+  }
+
+  /** Refuse stale previews; write every selected title atomically, leaving all others untouched. */
+  public void applyColorPlan(long term, List<Course> snapshot, Map<String,String> colors) {
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      List<Course> current = courses(term);
+      Map<Long,String> expected = new HashMap<>();
+      for(Course c : snapshot) expected.put(c.id,c.json().toString());
+      if(current.size()!=expected.size()) throw new IllegalStateException("课表已变化，请重新打开配色预览");
+      for(Course c : current) if(!c.json().toString().equals(expected.get(c.id)))
+        throw new IllegalStateException("课表已变化，请重新打开配色预览");
+      for(String color : colors.values()) if(!CourseColors.valid(color))
+        throw new IllegalArgumentException("颜色无效");
+      for(Course c : current) if(colors.containsKey(c.title)) {
+        c.color = colors.get(c.title); c.colorManual = false; save(c);
+      }
+      d.setTransactionSuccessful();
+    } catch(JSONException e) { throw new IllegalStateException(e); }
+    finally { d.endTransaction(); }
+  }
+
+  public void markColorManual(long term, String title) {
+    SQLiteDatabase d = getWritableDatabase();
+    d.beginTransaction();
+    try {
+      for (Course c : courses(term)) if (title.equals(c.title) && !c.colorManual) {
+        c.colorManual = true; save(c);
+      }
+      d.setTransactionSuccessful();
+    } finally { d.endTransaction(); }
+  }
+
   /** Repaints every arrangement of one title. Returns how many rows were written. */
   public int recolorTitle(long term, String title, String color) {
     // Rejects rather than coerces: Course.validate would quietly turn a malformed value into
@@ -337,6 +374,8 @@ public class ScheduleDb extends SQLiteOpenHelper {
       // Same title, same colour: seeded from what this term already has, so a re-import can never
       // repaint the schedule the user is looking at.
       Map<String, String> byTitle = new LinkedHashMap<>();
+      Set<String> manualTitles = new HashSet<>();
+      for (Course e : existing) if (e.colorManual) manualTitles.add(e.title);
       for (Course e : existing)
         if (!byTitle.containsKey(e.title)) byTitle.put(e.title, e.color);
       // Grown as titles are added, so two courses arriving in the same file cannot both take the
@@ -354,6 +393,8 @@ public class ScheduleDb extends SQLiteOpenHelper {
           used.add(fresh);
         }
         c.color = byTitle.get(c.title);
+        // AI-provided metadata cannot override the existing title's ownership.
+        c.colorManual = manualTitles.contains(c.title);
         // Course.same ignores colour, so recolouring above can neither create nor hide a duplicate.
         boolean duplicate = false;
         for (Course e : existing)

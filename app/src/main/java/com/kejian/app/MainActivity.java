@@ -200,27 +200,7 @@ public class MainActivity extends Activity {
    * the same reason — see {@link #unifyColorsOnce} for the repair that does run by itself.
    */
   private void confirmSpread() {
-    new AlertDialog.Builder(this)
-        .setTitle("重排课程颜色？")
-        .setMessage(
-            "同名课程共用一个颜色，不同的课各用一种颜色。\n"
-                + "现有课表的配色会被改写，建议先「备份课表」。")
-        .setNegativeButton("取消", null)
-        .setPositiveButton("重排", (d, w) -> runSpread())
-        .show();
-  }
-
-  private void runSpread() {
-    try {
-      // Unify first: spread reads each title's colour off its first arrangement, so a title whose
-      // arrangements still disagree would be spread from an arbitrary one of them.
-      int changed = db.unifyColors(termId) + db.spreadColors(termId);
-      prefs.edit().putInt("colorsSpreadCount", changed).apply();
-      toast(changed == 0 ? "当前学期的课程颜色已经互不相同" : "已重排 " + changed + " 项安排的颜色");
-      showTab(3);
-    } catch (Exception e) {
-      Ui.error(this, e);
-    }
+    ColorOptimization.open(this, termId);
   }
 
   private void runUnify() {
@@ -423,13 +403,13 @@ public class MainActivity extends Activity {
     LinearLayout headers = Ui.row(this);
     headers.setBackgroundColor(Color.WHITE);
     View rail = new View(this);
-    headers.addView(rail, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 58)));
+    headers.addView(rail, new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 58)));
     LocalDate monday = LocalDate.parse(term().start).plusWeeks(displayWeek - 1);
     int todayIndex = -1;
     for (int i = 0; i < days; i++) {
       LocalDate date = monday.plusDays(i);
       boolean today = date.equals(LocalDate.now()) && prefs.getBoolean("highlight", true);
-      // Stays -1 when the five-day layout hides a weekend "today", so no block is frosted off-grid.
+      // Stays -1 outside the current week, when disabled, or when today's weekend is hidden.
       if (today) todayIndex = i;
       LinearLayout col = Ui.col(this);
       col.setGravity(Gravity.CENTER);
@@ -450,7 +430,7 @@ public class MainActivity extends Activity {
     List<Course> cs = db.courses(termId);
     TimetableView grid =
         new TimetableView(
-            this, cs, days, periods(), displayWeek, startTimes(), todayIndex, this::showDetail);
+            this, cs, days, periods(), displayWeek, startTimes(), endTimes(), todayIndex, this::showDetail);
     scroll.addView(grid, new ScrollView.LayoutParams(-1, -2));
     board.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
     TextView add = Ui.button(this, "+", true, () -> editCourse(null));
@@ -537,7 +517,7 @@ public class MainActivity extends Activity {
         bell = bellFor(c.start);
         next = true;
       } else status = "待上课";
-      LinearLayout card =
+      View card =
           courseCard(
               c,
               status
@@ -551,32 +531,23 @@ public class MainActivity extends Activity {
     }
   }
 
-  private LinearLayout courseCard(Course c, String subtitle) {
-    LinearLayout card = Ui.card(this);
-    LinearLayout row = Ui.row(this);
-    View bar = new View(this);
+  private View courseCard(Course c, String subtitle) {
+    View card = getLayoutInflater().inflate(R.layout.item_course_card, null);
+    View bar = card.findViewById(R.id.course_card_bar);
     bar.setBackground(Ui.bg(Ui.color(c.color), Ui.dp(this, 4)));
-    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(Ui.dp(this, 5), Ui.dp(this, 62));
-    bp.rightMargin = Ui.dp(this, 14);
-    row.addView(bar, bp);
-    LinearLayout copy = Ui.col(this);
-    TextView title = Ui.text(this, c.title, 16, Ui.INK, true);
-    title.setMaxLines(2);
-    copy.addView(title);
-    Ui.gap(copy, 8);
-    copy.addView(Ui.text(this, subtitle, 12, Ui.MUTED, false));
-    Ui.gap(copy, 6);
-    copy.addView(
-        Ui.text(
-            this,
-            (c.room.isEmpty() ? "地点待填写" : c.room)
-                + "  ·  "
-                + (c.teacher.isEmpty() ? "教师待填写" : c.teacher),
-            12,
-            Ui.MUTED,
-            false));
-    row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
-    card.addView(row);
+
+    TextView title = card.findViewById(R.id.course_card_title);
+    title.setText(c.title);
+
+    TextView sub = card.findViewById(R.id.course_card_subtitle);
+    sub.setText(subtitle);
+
+    TextView info = card.findViewById(R.id.course_card_info);
+    info.setText(
+        (c.room.isEmpty() ? "地点待填写" : c.room)
+            + "  ·  "
+            + (c.teacher.isEmpty() ? "教师待填写" : c.teacher));
+
     card.setOnClickListener(v -> showDetail(c));
     return card;
   }
@@ -608,7 +579,7 @@ public class MainActivity extends Activity {
           String q = search.getText().toString().trim().toLowerCase(Locale.ROOT);
           for (Course c : all)
             if ((c.title + c.teacher + c.room).toLowerCase(Locale.ROOT).contains(q)) {
-              LinearLayout card =
+              View card =
                   courseCard(c, c.when() + "  ·  " + ScheduleRules.formatWeeks(c.weeks) + "周");
               results.addView(SwipeRow.wrap(this, card, () -> confirmDelete(c)));
               Ui.gap(results, 10);
@@ -642,6 +613,7 @@ public class MainActivity extends Activity {
           db.save(value);
           // After the save, so the scan sees the row that was just written. Idempotent for it.
           if (repaint) db.recolorTitle(value.semesterId, value.title, value.color);
+          if (colorPicked) db.markColorManual(value.semesterId, value.title);
           ensureVisiblePeriods();
           showTab(tab);
           toast("课程已保存");
@@ -657,8 +629,14 @@ public class MainActivity extends Activity {
    */
   private boolean applyTitleColor(Course value, boolean colorPicked, boolean fresh) {
     String known = db.colorFor(value.semesterId, value.title);
-    if (colorPicked) return known != null && !known.equalsIgnoreCase(value.color);
-    if (known != null) value.color = known;
+    if (colorPicked) {
+      value.colorManual = true;
+      return known != null && !known.equalsIgnoreCase(value.color);
+    }
+    if (known != null) {
+      value.color = known;
+      value.colorManual = db.isColorManual(value.semesterId, value.title);
+    }
     else if (fresh) value.color = CourseColors.pick(value.title, db.colorsInUse(value.semesterId));
     return false;
   }
@@ -859,6 +837,7 @@ public class MainActivity extends Activity {
               throw new IllegalArgumentException("与“" + other.title + "”时间冲突，请调整");
           db.save(value);
           if (repaint) db.recolorTitle(termId, value.title, value.color);
+          if (colorPicked) db.markColorManual(termId, value.title);
           ensureVisiblePeriods();
           db.deletePending(id);
           showSamplePending();
@@ -870,35 +849,34 @@ public class MainActivity extends Activity {
     LinearLayout root = subScreen("学期管理", "切换学期，课程数据分别保存");
     LinearLayout body = content(root);
     for (ScheduleDb.Term t : db.terms()) {
-      LinearLayout card = Ui.card(this);
-      card.addView(Ui.text(this, t.name, 18, t.id == termId ? Ui.PRIMARY : Ui.INK, true));
-      Ui.gap(card, 10);
-      card.addView(
-          Ui.text(
-              this,
-              (t.id == termId ? "当前学期  ·  " : "") + "共 " + t.weeks + " 周",
-              13,
-              Ui.MUTED,
-              false));
-      Ui.gap(card, 8);
-      card.addView(Ui.text(this, "开学日期  " + t.start, 13, Ui.MUTED, false));
-      LinearLayout actions = Ui.row(this);
-      actions.addView(
-          Ui.link(this, "编辑", () -> editTerm(t)), new LinearLayout.LayoutParams(0, -2, 1));
-      actions.addView(
-          Ui.link(
-              this,
-              t.id == termId ? "查看课表" : "切换到此学期",
-              () -> {
-                activateTerm(t.id);
-                showTab(0);
-              }),
-          new LinearLayout.LayoutParams(0, -2, 1));
-      TextView remove = Ui.link(this, "删除", () -> confirmDeleteTerm(t));
-      remove.setTextColor(Ui.DANGER);
+      View card = getLayoutInflater().inflate(R.layout.item_term_card, body, false);
+      TextView name = card.findViewById(R.id.term_card_name);
+      name.setText(t.name);
+      name.setTextColor(t.id == termId ? Ui.PRIMARY : Ui.INK);
+
+      View badge = card.findViewById(R.id.term_card_badge);
+      badge.setVisibility(t.id == termId ? View.VISIBLE : View.GONE);
+
+      TextView weeks = card.findViewById(R.id.term_card_weeks);
+      weeks.setText("共 " + t.weeks + " 周");
+
+      TextView start = card.findViewById(R.id.term_card_start);
+      start.setText("开学日期  " + t.start);
+
+      card.findViewById(R.id.term_card_edit).setOnClickListener(v -> editTerm(t));
+
+      TextView sw = card.findViewById(R.id.term_card_switch);
+      sw.setText(t.id == termId ? "查看课表" : "切换到此学期");
+      sw.setOnClickListener(
+          v -> {
+            activateTerm(t.id);
+            showTab(0);
+          });
+
+      View remove = card.findViewById(R.id.term_card_delete);
       remove.setContentDescription("删除学期 " + t.name);
-      actions.addView(remove, new LinearLayout.LayoutParams(0, -2, 1));
-      card.addView(actions);
+      remove.setOnClickListener(v -> confirmDeleteTerm(t));
+
       body.addView(card);
       Ui.gap(body, 14);
     }
@@ -953,11 +931,11 @@ public class MainActivity extends Activity {
   }
 
   private void editTerm(ScheduleDb.Term t) {
-    LinearLayout form = Ui.col(this);
-    Ui.pad(form, 22, 10);
-    EditText name = Ui.input(this, "学期名称", t.name, form);
-    EditText start = Ui.input(this, "第一周周一日期（YYYY-MM-DD）", t.start, form);
-    start.setFocusable(false);
+    View form = getLayoutInflater().inflate(R.layout.dialog_term_editor, null);
+    EditText name = form.findViewById(R.id.term_name);
+    name.setText(t.name);
+    EditText start = form.findViewById(R.id.term_start);
+    start.setText(t.start);
     start.setOnClickListener(
         v -> {
           LocalDate d = LocalDate.parse(start.getText());
@@ -969,11 +947,11 @@ public class MainActivity extends Activity {
                   d.getDayOfMonth())
               .show();
         });
-    EditText weeks = Ui.input(this, "总周数（1–40）", "" + t.weeks, form);
-    weeks.setInputType(2);
+    EditText weeks = form.findViewById(R.id.term_weeks);
+    weeks.setText(String.valueOf(t.weeks));
     AlertDialog dialog =
         new AlertDialog.Builder(this)
-            .setTitle(t.id == 0 ? "新建学期" : "编辑学期")
+            .setTitle(t.id == 0 ? R.string.term_editor_add_title : R.string.term_editor_edit_title)
             .setView(form)
             .setNegativeButton("取消", null)
             .setPositiveButton("保存", null)

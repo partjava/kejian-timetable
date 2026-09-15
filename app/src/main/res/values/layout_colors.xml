@@ -7,4 +7,5 @@
     <color name="page_line">#EBECF4</color>
     <color name="page_secondary">#EFEDFF</color>
     <color name="page_white">#FFFFFF</color>
+    <color name="color_danger">#D34C57</color>
 </resources>

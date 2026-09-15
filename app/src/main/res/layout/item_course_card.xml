@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/page_card_selectable"
+    android:clickable="true"
+    android:focusable="true"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp"
+    tools:context=".MainActivity">
+
+    <View
+        android:id="@+id/course_card_bar"
+        android:layout_width="5dp"
+        android:layout_height="match_parent"
+        android:layout_marginRight="14dp"
+        android:minHeight="62dp"
+        tools:background="@color/page_primary"
+        tools:ignore="RtlHardcoded" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/course_card_title"
+            style="@style/PageText"
+            android:layout_width="match_parent"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end"
+            tools:text="高等数学（上）" />
+
+        <TextView
+            android:id="@+id/course_card_subtitle"
+            style="@style/PageCaption"
+            android:layout_width="match_parent"
+            android:layout_marginTop="7dp"
+            android:textSize="12sp"
+            tools:text="周一第 1–2 节 · 08:30–10:05" />
+
+        <TextView
+            android:id="@+id/course_card_info"
+            style="@style/PageCaption"
+            android:layout_width="match_parent"
+            android:layout_marginTop="5dp"
+            android:textSize="12sp"
+            tools:text="教三 201 · 张教授" />
+    </LinearLayout>
+</LinearLayout>

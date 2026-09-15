@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="22dp"
+    android:paddingRight="22dp"
+    android:paddingTop="18dp"
+    android:paddingBottom="10dp"
+    tools:context=".MainActivity">
+
+    <TextView
+        style="@style/PageLabel"
+        android:text="@string/term_name_label" />
+
+    <EditText
+        android:id="@+id/term_name"
+        style="@style/PageField"
+        android:hint="@string/term_name_hint"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        tools:ignore="VisualLintTextFieldSize" />
+
+    <TextView
+        style="@style/PageLabel"
+        android:text="@string/term_start_label" />
+
+    <EditText
+        android:id="@+id/term_start"
+        style="@style/PageField"
+        android:hint="@string/term_start_hint"
+        android:focusable="false"
+        android:clickable="true"
+        android:cursorVisible="false"
+        android:importantForAutofill="no"
+        android:inputType="none"
+        tools:ignore="VisualLintTextFieldSize" />
+
+    <TextView
+        style="@style/PageLabel"
+        android:text="@string/term_weeks_label" />
+
+    <EditText
+        android:id="@+id/term_weeks"
+        style="@style/PageField"
+        android:hint="@string/term_weeks_hint"
+        android:inputType="number"
+        android:importantForAutofill="no"
+        tools:ignore="VisualLintTextFieldSize" />
+</LinearLayout>

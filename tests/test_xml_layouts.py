@@ -6,8 +6,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LAYOUT = ROOT / 'app/src/main/res/layout'
 A = '{http://schemas.android.com/apk/res/android}'
+T = '{http://schemas.android.com/tools}'
 
 class XmlLayoutsTest(unittest.TestCase):
+    def test_theme_uses_supported_system_font(self):
+        root = ET.parse(LAYOUT.parent / 'values/styles.xml').getroot()
+        family = root.find("style[@name='AppTheme']/item[@name='android:fontFamily']")
+        self.assertEqual('sans-serif', family.text)
+
+    def test_weighted_pages_have_standalone_preview_height(self):
+        for name in ['page_settings', 'page_ai_settings']:
+            root = self.layout(name)
+            self.assertEqual('0dp', root.get(A + 'layout_height'))
+            self.assertEqual('1', root.get(A + 'layout_weight'))
+            self.assertEqual('match_parent', root.get(T + 'layout_height'), name)
+
+    def test_dynamic_setting_labels_have_preview_only_samples(self):
+        for name in ['item_setting', 'item_setting_toggle']:
+            root = self.layout(name)
+            for label in ['setting_title', 'setting_detail']:
+                element = next(e for e in root.iter() if e.get(A + 'id') == '@+id/' + label)
+                self.assertTrue(element.get(T + 'text'), name + '/' + label)
+                self.assertIsNone(element.get(A + 'text'))
+
     def layout(self, name):
         path = LAYOUT / (name + '.xml')
         self.assertTrue(path.exists(), 'Missing XML layout: ' + name)

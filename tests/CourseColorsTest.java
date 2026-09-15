@@ -69,8 +69,7 @@ public class CourseColorsTest {
         String overflow=CourseColors.pick("第三十一门课",worn);
         check(worn.contains(overflow),"past the palette's end, pick reuses a colour");
 
-        // A title forced off its seed stays in the same hue family, so a course the user recognises
-        // by colour does not jump across the wheel. PALETTE is laid out three per family.
+        // A new title must avoid visually similar hues, not merely different RGB strings.
         String seed=CourseColors.seed("软件工程");
         int at=CourseColors.PALETTE.length;
         for(int i=0;i<CourseColors.PALETTE.length;i++)
@@ -80,7 +79,20 @@ public class CourseColorsTest {
         int movedAt=-1;
         for(int i=0;i<CourseColors.PALETTE.length;i++)
             if(CourseColors.PALETTE[i].equals(moved)) movedAt=i;
-        check(movedAt/3==at/3,"a blocked title moves within its own hue family, not to "+(movedAt/3));
+        check(movedAt/3!=at/3,"a blocked title should prefer a visibly different hue family");
+        check(CourseColors.pick("软件工程",new HashSet<>(Arrays.asList(seed.toLowerCase(Locale.ROOT))))
+            .equals(moved),"blocked colors are case insensitive");
+        for(String candidate : palette)
+            check(CourseColors.displayDistance(moved,seed) + .000001 >= CourseColors.displayDistance(candidate,seed),
+                "selection maximizes displayed distance");
+        Set<String> sample = new LinkedHashSet<>();
+        for(int i=0;i<12;i++) {
+            String chosen = CourseColors.pick("新课程"+i,sample);
+            double distance = nearest(chosen,sample);
+            for(String candidate:palette) if(!sample.contains(candidate))
+                check(distance + .000001 >= nearest(candidate,sample),"maximin for multiple existing colors");
+            sample.add(chosen);
+        }
 
         // seed() falls back to PALETTE[0] when the digest is unavailable; that is only the same
         // thing as DEFAULT while these two agree.
@@ -96,6 +108,11 @@ public class CourseColorsTest {
         System.out.println(checks+" course colour checks passed");
     }
 
+    static double nearest(String color,Set<String> used) {
+        double result=Double.POSITIVE_INFINITY;
+        for(String other:used) result=Math.min(result,CourseColors.displayDistance(color,other));
+        return result;
+    }
     /** True when some sampled title produces a hash whose top bit is set. */
     static boolean hasNegativeSeed(){
         for(int i=0;i<2000;i++){

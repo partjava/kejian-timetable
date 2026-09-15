@@ -4,11 +4,10 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.text.Editable;
-import android.text.InputType;
 import android.text.TextWatcher;
-import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.View;
 import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -22,54 +21,26 @@ public final class ColorPicker {
 
   public static void open(Context c, String current, Picked callback) {
     final int[] rgb = parse(current);
-    // Guards the three-way sync below: each widget writes to rgb, then one render writes back to
-    // all three, and without this the write-back would re-enter as if the user had moved something.
     final boolean[] syncing = {false};
 
-    LinearLayout root = Ui.col(c);
-    Ui.pad(root, 22, 12);
-    root.addView(Ui.text(c, "自定义颜色", 21, Ui.INK, true));
-    Ui.gap(root, 16);
+    View root = LayoutInflater.from(c).inflate(R.layout.dialog_color_picker, null);
+    final TextView preview = root.findViewById(R.id.color_preview);
+    final EditText hex = root.findViewById(R.id.color_hex);
 
-    final TextView preview = Ui.text(c, "示例文字 Aa 123", 16, Ui.INK, true);
-    preview.setGravity(Gravity.CENTER);
-    root.addView(preview, new LinearLayout.LayoutParams(-1, Ui.dp(c, 72)));
-    Ui.gap(root, 6);
-    root.addView(Ui.text(c, "上面的字会自动变成看得清的颜色", 12, Ui.MUTED, false));
-    Ui.gap(root, 16);
+    final SeekBar[] bars = new SeekBar[] {
+      root.findViewById(R.id.color_red_bar),
+      root.findViewById(R.id.color_green_bar),
+      root.findViewById(R.id.color_blue_bar)
+    };
+    final TextView[] values = new TextView[] {
+      root.findViewById(R.id.color_red_val),
+      root.findViewById(R.id.color_green_val),
+      root.findViewById(R.id.color_blue_val)
+    };
 
-    final EditText hex = new EditText(c);
-    hex.setTextSize(15);
-    hex.setTextColor(Ui.INK);
-    hex.setSingleLine(true);
-    hex.setInputType(InputType.TYPE_CLASS_TEXT);
-    hex.setBackground(Ui.border(c, Ui.BG, 12));
-    Ui.pad(hex, 12, 12);
-    root.addView(Ui.text(c, "十六进制", 13, Ui.MUTED, false));
-    Ui.gap(root, 7);
-    root.addView(hex, new LinearLayout.LayoutParams(-1, Ui.dp(c, 48)));
-    Ui.gap(root, 16);
-
-    final SeekBar[] bars = new SeekBar[3];
-    final TextView[] values = new TextView[3];
-    String[] names = {"红 R", "绿 G", "蓝 B"};
     for (int i = 0; i < 3; i++) {
       final int channel = i;
-      LinearLayout row = Ui.row(c);
-      row.addView(
-          Ui.text(c, names[i], 14, Ui.INK, true),
-          new LinearLayout.LayoutParams(Ui.dp(c, 46), -2));
-      SeekBar bar = new SeekBar(c);
-      bar.setMax(255);
-      bar.setContentDescription(names[i]);
-      row.addView(bar, new LinearLayout.LayoutParams(0, -2, 1));
-      TextView value = Ui.text(c, "", 14, Ui.MUTED, false);
-      value.setGravity(Gravity.END);
-      row.addView(value, new LinearLayout.LayoutParams(Ui.dp(c, 42), -2));
-      root.addView(row);
-      bars[i] = bar;
-      values[i] = value;
-      bar.setOnSeekBarChangeListener(
+      bars[i].setOnSeekBarChangeListener(
           new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar b, int progress, boolean fromUser) {
               if (syncing[0] || !fromUser) return;
@@ -91,7 +62,7 @@ public final class ColorPicker {
             if (syncing[0]) return;
             String text = s.toString().trim();
             if (!text.startsWith("#")) text = "#" + text;
-            if (!text.matches("#[0-9a-fA-F]{6}")) return; // half-typed: wait for the sixth digit
+            if (!text.matches("#[0-9a-fA-F]{6}")) return;
             int[] parsed = parse(text);
             System.arraycopy(parsed, 0, rgb, 0, 3);
             render(c, rgb, bars, values, hex, preview, syncing);
@@ -120,9 +91,8 @@ public final class ColorPicker {
     String value = toHex(rgb[0], rgb[1], rgb[2]);
     for (int i = 0; i < 3; i++) {
       bars[i].setProgress(rgb[i]);
-      values[i].setText("" + rgb[i]);
+      values[i].setText(String.valueOf(rgb[i]));
     }
-    // Case-insensitive so typing an uppercase hex is not yanked back mid-edit.
     if (!hex.getText().toString().trim().equalsIgnoreCase(value)) hex.setText(value);
     preview.setTextColor(Ui.inkOn(value));
     preview.setBackground(Ui.bg(Color.parseColor(value), Ui.dp(c, 16)));

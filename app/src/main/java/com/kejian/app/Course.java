@@ -6,6 +6,7 @@ import org.json.*;
 /** One teaching arrangement. A course title may have several rooms/week sets. */
 public class Course {
   public long id, semesterId;
+  public boolean colorManual = false;
   public String title = "", teacher = "", room = "", color = CourseColors.DEFAULT, notes = "";
   public int day = 1, start = 1, end = 2;
   public List<Integer> weeks = new ArrayList<>();
@@ -19,6 +20,7 @@ public class Course {
         .put("teacher", teacher)
         .put("room", room)
         .put("color", color)
+        .put("colorManual", colorManual)
         .put("notes", notes)
         .put("day", day)
         .put("start", start)
@@ -35,6 +37,8 @@ public class Course {
     c.room = j.optString("room", "");
     c.notes = j.optString("notes", "");
     c.color = j.optString("color", CourseColors.DEFAULT);
+    // Older backups cannot distinguish hand-picked colors: preserve them by default.
+    c.colorManual = j.optBoolean("colorManual", true);
     c.day = j.getInt("day");
     c.start = j.getInt("start");
     c.end = j.getInt("end");
@@ -53,6 +57,7 @@ public class Course {
     c.teacher = teacher;
     c.room = room;
     c.color = color;
+    c.colorManual = colorManual;
     c.notes = notes;
     c.day = day;
     c.start = start;

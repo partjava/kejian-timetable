@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="22dp"
+    android:paddingRight="22dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="12dp"
+    tools:context=".ColorPicker"
+    tools:ignore="HardcodedText">
+
+    <TextView
+        style="@style/PageText"
+        android:layout_width="wrap_content"
+        android:textSize="21sp"
+        android:textStyle="bold"
+        android:text="@string/color_picker_title" />
+
+    <TextView
+        android:id="@+id/color_preview"
+        style="@style/PageText"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:text="@string/color_picker_preview_text" />
+
+    <TextView
+        style="@style/PageCaption"
+        android:layout_width="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="@string/color_picker_preview_tip"
+        tools:ignore="VisualLintBounds" />
+
+    <TextView
+        style="@style/PageLabel"
+        android:layout_marginTop="16dp"
+        android:text="@string/color_picker_hex_label"
+        tools:ignore="VisualLintBounds" />
+
+    <EditText
+        android:id="@+id/color_hex"
+        style="@style/PageField"
+        android:layout_marginBottom="16dp"
+        android:hint="@string/color_picker_hex_hint"
+        android:inputType="textCapCharacters"
+        android:digits="0123456789abcdefABCDEF#"
+        android:importantForAutofill="no"
+        tools:ignore="VisualLintTextFieldSize" />
+
+    <!-- Red Slider -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/PageText"
+            android:layout_width="46dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="@string/color_picker_red" />
+
+        <SeekBar
+            android:id="@+id/color_red_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="255"
+            android:contentDescription="@string/color_picker_red" />
+
+        <TextView
+            android:id="@+id/color_red_val"
+            style="@style/PageCaption"
+            android:layout_width="42dp"
+            android:gravity="end"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Green Slider -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/PageText"
+            android:layout_width="46dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="@string/color_picker_green" />
+
+        <SeekBar
+            android:id="@+id/color_green_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="255"
+            android:contentDescription="@string/color_picker_green" />
+
+        <TextView
+            android:id="@+id/color_green_val"
+            style="@style/PageCaption"
+            android:layout_width="42dp"
+            android:gravity="end"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Blue Slider -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/PageText"
+            android:layout_width="46dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="@string/color_picker_blue" />
+
+        <SeekBar
+            android:id="@+id/color_blue_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="255"
+            android:contentDescription="@string/color_picker_blue" />
+
+        <TextView
+            android:id="@+id/color_blue_val"
+            style="@style/PageCaption"
+            android:layout_width="42dp"
+            android:gravity="end"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>
